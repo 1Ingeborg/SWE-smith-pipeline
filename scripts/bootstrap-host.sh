@@ -14,7 +14,7 @@ export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
 sudo apt-get install -y \
   build-essential ca-certificates curl docker.io docker-compose-v2 git git-lfs \
-  jq python3-pip python3-venv rsync tmux unzip
+  htop jq python3-pip python3-venv rsync sysstat tmux unzip
 
 sudo mkdir -p \
   /etc/docker /etc/containerd \
