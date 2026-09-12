@@ -93,4 +93,4 @@ bash scripts/check-install.sh
 人工检查有效与无效样本
 ```
 
-执行前阅读 [首轮实验说明](docs/first-experiment.md)。
+执行前阅读 [首轮实验说明](docs/first-experiment.md)，本次实测记录见 [首轮实验结果](docs/pilot-results.md)。
