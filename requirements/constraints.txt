@@ -1,0 +1,2 @@
+# SWE-smith commit 9b74ac0 imports DOCKER_USER from SWE-bench.
+swebench==4.1.0

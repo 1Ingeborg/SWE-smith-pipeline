@@ -1,0 +1,44 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.token
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated SWE data
+logs/
+datasets/
+artifacts/
+results/
+tasks/
+trajectories/
+models/
+checkpoints/
+cache/
+
+# Large archives and model files
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
