@@ -37,6 +37,11 @@ HARD_PATTERNS: dict[str, str] = {
         r"\b(?:fix by|should restore|should add back|needs? to restore|"
         r"reimplement|re-add|change the implementation|update the code to)\b"
     ),
+    "root_cause_disclosure": (
+        r"\b(?:conditional|branch|fallback|else)\s+(?:logic|block)\b"
+        r"[^.\n]{0,80}\b(?:misplaced|inverted|reversed|swapped)\b"
+        r"|\bearly return\b[^.\n]{0,80}\b(?:prevents|bypasses|skips)\b"
+    ),
 }
 
 AMBIGUOUS_PATTERNS: dict[str, str] = {
@@ -44,6 +49,8 @@ AMBIGUOUS_PATTERNS: dict[str, str] = {
     "internal_mechanism_wording": (
         r"\b(?:internal helper|implementation detail|wrong branch|missing assignment|"
         r"environment variable lookup|stack frames? (?:are|is) not searched)\b"
+        r"|\b(?:cannot|fails? to|does not)\s+(?:traverse|walk|search)"
+        r"\s+(?:the\s+)?[A-Za-z_-]+\s+chain\b"
     ),
     "suspicious_missing_wording": (
         r"\b(?:missing (?:method|function|assignment|lookup|branch)|"

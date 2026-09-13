@@ -65,3 +65,27 @@ def test_routes_ambiguous_causal_claim_to_semantic_review() -> None:
 def test_rejects_test_framework_leakage() -> None:
     result = audit("The pytest test suite fails.", "-return value")
     assert result["final_status"] == "reject"
+
+
+def test_rejects_explicit_conditional_root_cause() -> None:
+    result = audit(
+        "The conditional logic is misplaced, and the early return prevents parsing.",
+        "-if configured:\n-    parse_modules()",
+    )
+    assert result["final_status"] == "reject"
+    assert any(
+        finding["code"] == "root_cause_disclosure"
+        for finding in result["hard_findings"]
+    )
+
+
+def test_rejects_private_identifier_with_chain_mechanism() -> None:
+    result = audit(
+        "The tracer cannot traverse the wrapper chain through __wrapped__.",
+        "-while hasattr(func, '__wrapped__'):\n-    func = func.__wrapped__",
+    )
+    assert result["final_status"] == "reject"
+    assert any(
+        finding["code"] == "changed_identifier_with_causal_or_change_clue"
+        for finding in result["hard_findings"]
+    )
