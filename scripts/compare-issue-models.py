@@ -46,6 +46,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
     parser.add_argument("--base-url", default="https://dashscope.aliyuncs.com/compatible-mode/v1")
     parser.add_argument("--max-output-tokens", type=int, default=800)
+    parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--prepared-input", type=Path)
     return parser.parse_args()
 
 
@@ -134,17 +136,34 @@ Return only the issue title and body.
 
 def main() -> None:
     args = parse_args()
+    if args.prepared_input:
+        prepared = json.loads(args.prepared_input.read_text(encoding="utf-8"))
+    else:
+        rows = select_diverse(load_jsonl(args.dataset))
+        prepared = [
+            {
+                "instance_id": row["instance_id"],
+                "strategy": row.get("strategy"),
+                "broken_test_count": len(row.get("FAIL_TO_PASS", [])),
+                "prompt": user_prompt(row, args.validation_dir),
+            }
+            for row in rows
+        ]
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    if args.prepare_only:
+        args.output.write_text(json.dumps(prepared, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {len(prepared)} prepared inputs to {args.output}")
+        return
+
     api_key = os.getenv("DASHSCOPE_API_KEY")
     if not api_key:
         raise RuntimeError("DASHSCOPE_API_KEY is not set")
 
     client = OpenAI(api_key=api_key, base_url=args.base_url)
-    rows = select_diverse(load_jsonl(args.dataset))
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-
     results = []
-    for row in rows:
-        prompt = user_prompt(row, args.validation_dir)
+    for item in prepared:
+        prompt = item["prompt"]
         for model in args.models:
             started = time.perf_counter()
             try:
@@ -161,22 +180,22 @@ def main() -> None:
             except Exception as error:
                 results.append(
                     {
-                        "instance_id": row["instance_id"],
-                        "strategy": row.get("strategy"),
-                        "broken_test_count": len(row.get("FAIL_TO_PASS", [])),
+                        "instance_id": item["instance_id"],
+                        "strategy": item.get("strategy"),
+                        "broken_test_count": item["broken_test_count"],
                         "model": model,
                         "latency_seconds": round(time.perf_counter() - started, 3),
                         "error": f"{type(error).__name__}: {error}",
                     }
                 )
-                print(f"failed model={model} strategy={row.get('strategy')} error={type(error).__name__}")
+                print(f"failed model={model} strategy={item.get('strategy')} error={type(error).__name__}")
                 continue
             usage = response.usage
             results.append(
                 {
-                    "instance_id": row["instance_id"],
-                    "strategy": row.get("strategy"),
-                    "broken_test_count": len(row.get("FAIL_TO_PASS", [])),
+                    "instance_id": item["instance_id"],
+                    "strategy": item.get("strategy"),
+                    "broken_test_count": item["broken_test_count"],
                     "model": model,
                     "latency_seconds": round(time.perf_counter() - started, 3),
                     "prompt_tokens": usage.prompt_tokens if usage else None,
@@ -185,7 +204,7 @@ def main() -> None:
                 }
             )
             print(
-                f"completed model={model} strategy={row.get('strategy')} "
+                f"completed model={model} strategy={item.get('strategy')} "
                 f"prompt_tokens={usage.prompt_tokens if usage else '?'} "
                 f"completion_tokens={usage.completion_tokens if usage else '?'}"
             )
