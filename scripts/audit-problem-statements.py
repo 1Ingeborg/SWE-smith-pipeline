@@ -66,6 +66,14 @@ IDENTIFIER_STOPWORDS = {
     "try", "while", "with", "yield",
 }
 
+BALANCED_BLOCKING_CODES = {
+    "private_artifact_reference",
+    "test_or_ci_reference",
+    "repair_instruction",
+    "empty_problem_statement",
+    "excessive_length",
+}
+
 REVIEW_SYSTEM_PROMPT = """You are a strict leakage gate for synthetic GitHub
 issues. Compare the candidate issue with the private bug-inducing patch. Decide
 whether the issue reveals a changed/deleted identifier, implementation change,
@@ -93,6 +101,15 @@ def parse_args() -> argparse.Namespace:
         "--quarantine-output", type=Path, help="write rejected/unresolved rows as JSONL"
     )
     parser.add_argument("--candidate-field", default="problem_statement")
+    parser.add_argument(
+        "--policy",
+        choices=("strict", "balanced"),
+        default="strict",
+        help=(
+            "strict quarantines implementation/root-cause leakage; balanced "
+            "records it as a warning and blocks only severe leakage"
+        ),
+    )
     parser.add_argument("--review-ambiguous", action="store_true")
     parser.add_argument("--review-model", default="qwen3.7-flash-2026-07-15")
     parser.add_argument(
@@ -154,7 +171,12 @@ def regex_findings(candidate: str, patterns: dict[str, str]) -> list[dict[str, s
     return findings
 
 
-def deterministic_audit(row: dict[str, Any], candidate_field: str, max_words: int) -> dict[str, Any]:
+def deterministic_audit(
+    row: dict[str, Any],
+    candidate_field: str,
+    max_words: int,
+    policy: str = "strict",
+) -> dict[str, Any]:
     candidate = row.get(candidate_field) or ""
     patch = row.get("patch") or ""
     hard = regex_findings(candidate, HARD_PATTERNS)
@@ -191,7 +213,26 @@ def deterministic_audit(row: dict[str, Any], candidate_field: str, max_words: in
             }
         )
 
-    if hard:
+    warnings = list(ambiguous)
+    if policy == "balanced":
+        blocking = [
+            finding
+            for finding in hard
+            if finding["code"] in BALANCED_BLOCKING_CODES
+        ]
+        warnings.extend(
+            finding
+            for finding in hard
+            if finding["code"] not in BALANCED_BLOCKING_CODES
+        )
+        hard = blocking
+        if hard:
+            status = "reject"
+        elif warnings:
+            status = "accept_with_warnings"
+        else:
+            status = "accept"
+    elif hard:
         status = "reject"
     elif ambiguous:
         status = "needs_semantic_review"
@@ -205,6 +246,7 @@ def deterministic_audit(row: dict[str, Any], candidate_field: str, max_words: in
         "deterministic_status": status,
         "hard_findings": hard,
         "ambiguous_findings": ambiguous,
+        "warnings": warnings,
         "semantic_review": None,
         "final_status": status,
     }
@@ -256,11 +298,14 @@ def main() -> None:
     args = parse_args()
     rows = load_records(args.input)
     audits = [
-        deterministic_audit(row, args.candidate_field, args.max_words) for row in rows
+        deterministic_audit(
+            row, args.candidate_field, args.max_words, policy=args.policy
+        )
+        for row in rows
     ]
 
     review_count = 0
-    if args.review_ambiguous and any(
+    if args.policy == "strict" and args.review_ambiguous and any(
         item["final_status"] == "needs_semantic_review" for item in audits
     ):
         from openai import OpenAI
@@ -288,6 +333,7 @@ def main() -> None:
                 }
                 audit["final_status"] = "needs_review"
 
+    accepted_statuses = {"accept", "accept_with_warnings"}
     counts = Counter(item["final_status"] for item in audits)
     summary = {
         "input": str(args.input),
@@ -295,10 +341,14 @@ def main() -> None:
         "counts": dict(sorted(counts.items())),
         "semantic_review_calls": review_count,
         "accepted_instance_ids": [
-            item["instance_id"] for item in audits if item["final_status"] == "accept"
+            item["instance_id"]
+            for item in audits
+            if item["final_status"] in accepted_statuses
         ],
         "quarantined_instance_ids": [
-            item["instance_id"] for item in audits if item["final_status"] != "accept"
+            item["instance_id"]
+            for item in audits
+            if item["final_status"] not in accepted_statuses
         ],
     }
 
@@ -306,12 +356,20 @@ def main() -> None:
     if args.accepted_output:
         write_jsonl(
             args.accepted_output,
-            [row for row, audit in zip(rows, audits) if audit["final_status"] == "accept"],
+            [
+                row
+                for row, audit in zip(rows, audits)
+                if audit["final_status"] in accepted_statuses
+            ],
         )
     if args.quarantine_output:
         write_jsonl(
             args.quarantine_output,
-            [row for row, audit in zip(rows, audits) if audit["final_status"] != "accept"],
+            [
+                row
+                for row, audit in zip(rows, audits)
+                if audit["final_status"] not in accepted_statuses
+            ],
         )
     if args.summary:
         args.summary.parent.mkdir(parents=True, exist_ok=True)
@@ -321,7 +379,9 @@ def main() -> None:
         )
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    if args.fail_on_findings and any(item["final_status"] != "accept" for item in audits):
+    if args.fail_on_findings and any(
+        item["final_status"] not in accepted_statuses for item in audits
+    ):
         raise SystemExit(2)
 
 

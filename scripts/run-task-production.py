@@ -21,6 +21,7 @@ REPO_DIR = SCRIPT_DIR.parent
 DEFAULT_CONFIG = REPO_DIR / "configs" / "issue_gen" / "ig_v2_qwen.yaml"
 DEFAULT_LAUNCHER = SCRIPT_DIR / "issuegen-compat-launcher.py"
 DEFAULT_AUDITOR = SCRIPT_DIR / "audit-problem-statements.py"
+DEFAULT_USABILITY_CHECKER = SCRIPT_DIR / "check-task-usability.py"
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -41,6 +42,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--review-ambiguous", action="store_true")
     parser.add_argument(
+        "--audit-policy",
+        choices=("strict", "balanced"),
+        default="balanced",
+    )
+    parser.add_argument("--check-reproduction", action="store_true")
+    parser.add_argument(
         "--validation-dir",
         type=Path,
         default=Path("/data/repos/SWE-smith/logs/run_validation"),
@@ -60,6 +67,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--launcher", type=Path, default=DEFAULT_LAUNCHER)
     parser.add_argument("--auditor", type=Path, default=DEFAULT_AUDITOR)
+    parser.add_argument(
+        "--usability-checker", type=Path, default=DEFAULT_USABILITY_CHECKER
+    )
     return parser.parse_args()
 
 
@@ -146,6 +156,7 @@ def main() -> None:
         args.audit_python,
         args.launcher,
         args.auditor,
+        args.usability_checker,
     ]
     for path in required_paths:
         if not path.exists():
@@ -176,6 +187,8 @@ def main() -> None:
     accepted_jsonl = run_dir / "accepted.jsonl"
     quarantine_jsonl = run_dir / "quarantine.jsonl"
     manifest_json = run_dir / "manifest.json"
+    usability_jsonl = run_dir / "usability.jsonl"
+    usability_summary_json = run_dir / "usability-summary.json"
 
     if run_dir.exists() and not args.resume:
         raise RuntimeError(
@@ -263,12 +276,29 @@ def main() -> None:
             str(accepted_jsonl),
             "--quarantine-output",
             str(quarantine_jsonl),
+            "--policy",
+            args.audit_policy,
         ]
         if args.review_ambiguous:
             audit_command.append("--review-ambiguous")
         run_command(audit_command, cwd=REPO_DIR, env=env)
 
         summary = json.loads(summary_json.read_text(encoding="utf-8"))
+        usability_summary = None
+        if args.check_reproduction:
+            usability_command = [
+                str(args.audit_python),
+                str(args.usability_checker),
+                str(accepted_jsonl),
+                str(usability_jsonl),
+                "--summary",
+                str(usability_summary_json),
+                "--execute",
+            ]
+            run_command(usability_command, cwd=REPO_DIR, env=env)
+            usability_summary = json.loads(
+                usability_summary_json.read_text(encoding="utf-8")
+            )
         manifest.update(
             {
                 "status": "completed",
@@ -276,6 +306,7 @@ def main() -> None:
                 "raw_count": len(raw_records),
                 "audit_counts": summary.get("counts", {}),
                 "semantic_review_calls": summary.get("semantic_review_calls", 0),
+                "usability_summary": usability_summary,
                 "artifacts": {
                     "raw": str(raw_json),
                     "audit": str(audit_jsonl),
@@ -283,6 +314,14 @@ def main() -> None:
                     "accepted": str(accepted_jsonl),
                     "quarantine": str(quarantine_jsonl),
                     "issuegen_logs": str(workspace / "logs" / "issue_gen"),
+                    "usability": (
+                        str(usability_jsonl) if usability_summary is not None else None
+                    ),
+                    "usability_summary": (
+                        str(usability_summary_json)
+                        if usability_summary is not None
+                        else None
+                    ),
                 },
             }
         )

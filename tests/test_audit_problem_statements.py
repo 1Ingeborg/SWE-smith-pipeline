@@ -89,3 +89,36 @@ def test_rejects_private_identifier_with_chain_mechanism() -> None:
         finding["code"] == "changed_identifier_with_causal_or_change_clue"
         for finding in result["hard_findings"]
     )
+
+
+def test_balanced_policy_allows_root_cause_with_warning() -> None:
+    result = MODULE.deterministic_audit(
+        {
+            "instance_id": "example",
+            "problem_statement": (
+                "The conditional logic is misplaced and trace_modules_str "
+                "is referenced before assignment."
+            ),
+            "patch": "-trace_modules_str = os.environ.get('MODULES')",
+        },
+        "problem_statement",
+        600,
+        policy="balanced",
+    )
+    assert result["final_status"] == "accept_with_warnings"
+    assert not result["hard_findings"]
+    assert result["warnings"]
+
+
+def test_balanced_policy_still_blocks_test_leakage() -> None:
+    result = MODULE.deterministic_audit(
+        {
+            "instance_id": "example",
+            "problem_statement": "The pytest test suite fails.",
+            "patch": "-return value",
+        },
+        "problem_statement",
+        600,
+        policy="balanced",
+    )
+    assert result["final_status"] == "reject"
