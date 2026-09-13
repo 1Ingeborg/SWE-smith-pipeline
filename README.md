@@ -94,3 +94,6 @@ bash scripts/check-install.sh
 ```
 
 执行前阅读 [首轮实验说明](docs/first-experiment.md)，本次实测记录见 [首轮实验结果](docs/pilot-results.md)。
+
+问题描述生成的模型对比见 [Qwen 模型对比](docs/issue-model-comparison.md)，
+批量生成与自动审核方案见 [problem statement 质量控制](docs/problem-statement-quality-control.md)。
