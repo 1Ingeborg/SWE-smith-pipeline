@@ -72,21 +72,7 @@ Official references:
 
 ## Reproduction
 
-Prepare inputs on the Docker host:
-
-```bash
-python scripts/compare-issue-models.py \
-  /data/datasets/swe-smith-lab/monkeytype-pilot-valid.jsonl \
-  /data/repos/SWE-smith/logs/run_validation/Instagram__MonkeyType.70c3acf6 \
-  /data/results/issue-model-comparison/prepared-inputs.json \
-  --prepare-only
-```
-
-Run the comparison on a host that can reach DashScope:
-
-```bash
-export DASHSCOPE_API_KEY='set-this-outside-git'
-python scripts/compare-issue-models.py . . results/qwen-pilot.json \
-  --prepared-input results/prepared-inputs.json
-unset DASHSCOPE_API_KEY
-```
+The comparison was a one-off model selection experiment. Its harness was not
+kept in the repository, so there is no script to re-run here. Reproducing the
+numbers means re-writing a small client that sends the same prepared evidence
+to each candidate model. The decision it supported is recorded above.
