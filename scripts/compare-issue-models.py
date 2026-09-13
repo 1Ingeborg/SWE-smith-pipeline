@@ -5,6 +5,7 @@ import argparse
 import ast
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -22,19 +23,28 @@ PREFERRED_STRATEGIES = [
     "func_pm_remove_loop",
     "func_pm_class_rm_funcs",
 ]
+FORBIDDEN_OUTPUT_PATTERNS = {
+    "test reference": r"\b(?:pytest|tests?|assertions?)\b|test_[A-Za-z0-9_]+|tests/",
+    "data-generation reference": r"\b(?:patch(?:es)?|diff|benchmarks?|synthetic)\b",
+    "change disclosure": r"\b(?:removed|deleted)\b|handle_call",
+}
 
-SYSTEM_PROMPT = """You write realistic GitHub issue reports for software bugs.
-You will receive a bug-inducing patch, the tests affected by the bug, and relevant
-test source code. Write only the issue report that a user or developer could have
-submitted after observing the buggy behavior.
+SYSTEM_PROMPT = """You write realistic GitHub issue reports from an external user's
+point of view. The supplied implementation change and test evidence are private
+diagnostic evidence: reason from them silently and never cite or describe them.
 
 Requirements:
 - Describe observable actual behavior and expected behavior accurately.
 - Include a concise reproduction example when the supplied evidence supports one.
-- Do not mention the patch, diff, benchmark, synthetic data, pytest, or test names.
-- Do not reveal the exact code change, removed line, root cause, or solution.
+- Never mention patches, diffs, benchmarks, synthetic data, tests, assertions,
+  test frameworks, test files, test names, or CI results.
+- Never say that code, a line, loop, assignment, class, or method was removed,
+  deleted, missing, bypassed, or changed.
+- Do not name private implementation methods or speculate about the root cause.
+- Describe symptoms, not the implementation defect or a possible fix.
 - Do not invent APIs or behavior that are not supported by the evidence.
-- Keep the report focused and reasonably short.
+- Do not include placeholders for version, environment, or other unknown details.
+- Return a concise title followed by a body of at most 180 words.
 """
 
 
@@ -134,6 +144,14 @@ Return only the issue title and body.
 """
 
 
+def quality_flags(content: str) -> list[str]:
+    return [
+        label
+        for label, pattern in FORBIDDEN_OUTPUT_PATTERNS.items()
+        if re.search(pattern, content, flags=re.IGNORECASE)
+    ]
+
+
 def main() -> None:
     args = parse_args()
     if args.prepared_input:
@@ -201,6 +219,7 @@ def main() -> None:
                     "prompt_tokens": usage.prompt_tokens if usage else None,
                     "completion_tokens": usage.completion_tokens if usage else None,
                     "content": response.choices[0].message.content,
+                    "quality_flags": quality_flags(response.choices[0].message.content or ""),
                 }
             )
             print(
