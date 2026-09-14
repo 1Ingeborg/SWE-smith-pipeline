@@ -322,6 +322,77 @@ def ensure_image(
     return "pulled"
 
 
+def materialize_repo_from_image(
+    image_name: str,
+    destination: Path,
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    log_path: Path,
+) -> str:
+    """Copy the image's authoritative /testbed checkout into the run workspace."""
+    if destination.exists():
+        if (destination / ".git").is_dir():
+            print(f"Repository checkout already present: {destination}", flush=True)
+            return "already_present"
+        raise RuntimeError(
+            f"Refusing to replace non-git repository path: {destination}"
+        )
+
+    temporary = destination.with_name(
+        f".{destination.name}.from-image-{os.getpid()}"
+    )
+    if temporary.exists():
+        raise RuntimeError(f"Temporary checkout path already exists: {temporary}")
+    temporary.mkdir(parents=False)
+
+    create = subprocess.run(
+        ["docker", "create", image_name],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if create.returncode != 0:
+        raise RuntimeError(
+            f"Could not create source container for {image_name}: "
+            f"{create.stderr.strip()}"
+        )
+    container_id = create.stdout.strip()
+    if not container_id:
+        raise RuntimeError(f"docker create returned no container ID for {image_name}")
+
+    try:
+        run_command(
+            ["docker", "cp", f"{container_id}:/testbed/.", str(temporary)],
+            cwd=cwd,
+            env=env,
+            log_path=log_path,
+        )
+        if not (temporary / ".git").is_dir():
+            raise RuntimeError(f"Image does not contain /testbed/.git: {image_name}")
+        if not command_succeeds(
+            ["git", "-C", str(temporary), "rev-parse", "--is-inside-work-tree"]
+        ):
+            raise RuntimeError(f"Invalid git checkout copied from image: {image_name}")
+        temporary.rename(destination)
+    finally:
+        subprocess.run(
+            ["docker", "rm", "-f", container_id],
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if temporary.exists():
+            shutil.rmtree(temporary)
+
+    print(f"Repository restored from {image_name}:/testbed", flush=True)
+    return "copied_from_image"
+
+
 def generation_command(python: Path, plan: RepoPlan) -> list[str]:
     command = [
         str(python),
@@ -353,6 +424,7 @@ def print_plan(
     print(f"Validation workers: {config['validation_workers']}")
     print(f"Target validated: {config['target_validated'] or 'all configured repos'}")
     print("Disk-space checking: disabled")
+    print("Repository source: Docker image /testbed (GitHub clone not required)")
     print("Repositories:")
     for plan in plans:
         source = f" <- {plan.source_image_name}" if plan.source_image_name else ""
@@ -478,6 +550,16 @@ def main() -> None:
 
             bug_dir = mutation_workspace / "logs" / "bug_gen" / plan.repo
             if repo_state["stages"].get("generate") != "completed":
+                checkout = mutation_workspace / plan.repo
+                repo_state["source_action"] = materialize_repo_from_image(
+                    plan.image_name,
+                    checkout,
+                    cwd=mutation_workspace,
+                    env=env,
+                    log_path=repo_log_dir / "source.log",
+                )
+                repo_state["source"] = f"{plan.image_name}:/testbed"
+                write_json(manifest_path, manifest)
                 run_command(
                     generation_command(swesmith_python, plan),
                     cwd=mutation_workspace,

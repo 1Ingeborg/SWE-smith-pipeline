@@ -90,6 +90,20 @@ def test_generation_command_has_resource_bounds():
     assert command[command.index("--max_candidates") + 1] == "70"
 
 
+def test_materialize_refuses_existing_non_git_directory(tmp_path):
+    destination = tmp_path / "owner__repo.abc"
+    destination.mkdir()
+
+    with pytest.raises(RuntimeError, match="Refusing to replace"):
+        MODULE.materialize_repo_from_image(
+            "swebench/repo",
+            destination,
+            cwd=tmp_path,
+            env={},
+            log_path=tmp_path / "source.log",
+        )
+
+
 @pytest.mark.parametrize("run_id", ["batch-1", "qwen.v2", "run_20260914"])
 def test_validate_run_id_accepts_safe_names(run_id):
     MODULE.validate_run_id(run_id)

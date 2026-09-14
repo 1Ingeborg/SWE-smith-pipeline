@@ -104,6 +104,7 @@ bash scripts/check-install.sh
 
 ```text
 确认或拉取镜像
+  -> 从镜像 /testbed 恢复仓库源码（不依赖 GitHub clone）
   -> procedural mutation 生成
   -> 按 mutation strategy 选择候选
   -> Docker validation
