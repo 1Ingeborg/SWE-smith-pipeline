@@ -48,8 +48,8 @@ repositories:
     assert plans[0].selected_patches == 4
     assert plans[0].seed == 20
     assert plans[1].selected_patches == 7
-    assert plans[1].seed == 21
-    assert plans[1].selection_seed == 31
+    assert plans[1].seed == 20
+    assert plans[1].selection_seed == 30
 
 
 def test_load_config_rejects_duplicate_repositories(tmp_path):

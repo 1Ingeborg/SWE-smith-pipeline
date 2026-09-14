@@ -180,11 +180,11 @@ def load_config(path: Path) -> tuple[dict[str, Any], list[RepoPlan]]:
                     f"repositories[{index}].selected_patches",
                 ),
                 seed=positive_int(
-                    item.get("seed", defaults["seed"] + index),
+                    item.get("seed", defaults["seed"]),
                     f"repositories[{index}].seed",
                 ),
                 selection_seed=positive_int(
-                    item.get("selection_seed", defaults["selection_seed"] + index),
+                    item.get("selection_seed", defaults["selection_seed"]),
                     f"repositories[{index}].selection_seed",
                 ),
                 max_bugs_per_modifier=positive_int(

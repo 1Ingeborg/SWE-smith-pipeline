@@ -17,8 +17,8 @@ generation:
   max_entities: 2000
   max_candidates: 500
   timeout_seconds: 1800
-  seed: 20260914
-  selection_seed: 20260914
+  seed: 42
+  selection_seed: 42
 
 issue_generation:
   enabled: true
