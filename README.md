@@ -143,7 +143,7 @@ cd /data/repos/swe-smith-lab
 ```
 
 每个阶段结束后都会更新 `/data/results/multirepo-runs/<run-id>/manifest.json`。
-各仓库依次运行，默认 validation workers 为 1；问题描述生成完成后，最终数据位于：
+各仓库依次运行，默认 validation workers 为 4；问题描述生成完成后，最终数据位于：
 
 ```text
 /data/results/multirepo-runs/<run-id>/issuegen/accepted.jsonl

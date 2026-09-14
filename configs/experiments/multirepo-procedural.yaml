@@ -9,7 +9,7 @@ paths:
 # Repositories are processed one at a time. This target stops adding new
 # repositories after at least this many mutation-validated tasks are available.
 target_validated: 45
-validation_workers: 1
+validation_workers: 4
 
 generation:
   selected_patches: 15

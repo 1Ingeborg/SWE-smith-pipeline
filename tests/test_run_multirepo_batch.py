@@ -104,6 +104,23 @@ def test_materialize_refuses_existing_non_git_directory(tmp_path):
         )
 
 
+def test_target_result_reports_shortfall():
+    assert MODULE.target_result(43, 45) == {
+        "target_validated": 45,
+        "target_reached": False,
+        "validated_shortfall": 2,
+    }
+
+
+def test_target_result_reports_reached_or_unbounded():
+    assert MODULE.target_result(46, 45)["target_reached"] is True
+    assert MODULE.target_result(10, None) == {
+        "target_validated": None,
+        "target_reached": True,
+        "validated_shortfall": 0,
+    }
+
+
 @pytest.mark.parametrize("run_id", ["batch-1", "qwen.v2", "run_20260914"])
 def test_validate_run_id_accepts_safe_names(run_id):
     MODULE.validate_run_id(run_id)

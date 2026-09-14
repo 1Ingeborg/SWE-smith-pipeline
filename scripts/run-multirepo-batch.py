@@ -93,6 +93,15 @@ def count_records(path: Path) -> int:
     return sum(1 for line in text.splitlines() if line.strip())
 
 
+def target_result(actual: int, target: int | None) -> dict[str, Any]:
+    shortfall = max(target - actual, 0) if target is not None else 0
+    return {
+        "target_validated": target,
+        "target_reached": target is None or actual >= target,
+        "validated_shortfall": shortfall,
+    }
+
+
 def resolve_path(value: str | Path, *, base: Path = LAB_REPO) -> Path:
     path = Path(value).expanduser()
     return path if path.is_absolute() else (base / path).resolve()
@@ -480,6 +489,7 @@ def main() -> None:
             "started_at_unix": time.time(),
             "repositories": {},
             "disk_space_check": False,
+            **target_result(0, config["target_validated"]),
         }
 
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -490,6 +500,8 @@ def main() -> None:
     (run_dir / "candidates").mkdir(exist_ok=True)
     (run_dir / "validated").mkdir(exist_ok=True)
     manifest["status"] = "running"
+    manifest.pop("error", None)
+    manifest.pop("finished_at_unix", None)
     write_json(manifest_path, manifest)
 
     env = os.environ.copy()
@@ -674,6 +686,7 @@ def main() -> None:
         )
         validated_total = count_records(combined)
         manifest["validated_count"] = validated_total
+        manifest.update(target_result(validated_total, target_validated))
         manifest["artifacts"] = {"validated": str(combined)}
         write_json(manifest_path, manifest)
 
@@ -747,8 +760,13 @@ def main() -> None:
                 }
             )
 
-        manifest["status"] = "completed"
+        manifest["status"] = (
+            "completed"
+            if manifest["target_reached"]
+            else "completed_with_shortfall"
+        )
         manifest["finished_at_unix"] = time.time()
+        manifest.pop("error", None)
         write_json(manifest_path, manifest)
     except Exception as error:
         manifest["status"] = "failed"
@@ -757,7 +775,14 @@ def main() -> None:
         write_json(manifest_path, manifest)
         raise
 
-    print(f"Completed multi-repository run: {manifest_path}")
+    if manifest["status"] == "completed_with_shortfall":
+        print(
+            "Completed configured repositories with a validation shortfall: "
+            f"target={manifest['target_validated']} "
+            f"actual={manifest['validated_count']} "
+            f"shortfall={manifest['validated_shortfall']}"
+        )
+    print(f"Run status={manifest['status']}: {manifest_path}")
 
 
 if __name__ == "__main__":
