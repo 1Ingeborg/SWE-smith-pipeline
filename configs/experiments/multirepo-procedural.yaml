@@ -1,0 +1,52 @@
+schema_version: 1
+
+paths:
+  swesmith_repo: /data/repos/SWE-smith
+  swesmith_python: /data/venvs/swesmith/bin/python
+  issuegen_python: /data/venvs/swesmith-issuegen/bin/python
+  run_root: /data/results/multirepo-runs
+
+# Repositories are processed one at a time. This target stops adding new
+# repositories after at least this many mutation-validated tasks are available.
+target_validated: 45
+validation_workers: 1
+
+generation:
+  selected_patches: 15
+  max_bugs_per_modifier: 20
+  max_entities: 2000
+  max_candidates: 500
+  timeout_seconds: 1800
+  seed: 20260914
+  selection_seed: 20260914
+
+issue_generation:
+  enabled: true
+  config: configs/issue_gen/ig_v2_qwen.yaml
+  demo_pool: /data/datasets/swe-smith-lab/demo-problem-statements.json
+  demo_seed: 42
+  workers: 4
+  audit_policy: balanced
+  review_ambiguous: false
+  check_reproduction: false
+
+repositories:
+  - repo: pylint-dev__astroid.b114f6b5
+    image_name: swebench/swesmith.x86_64.pylint-dev_1776_astroid.b114f6b5
+    source_image_name: jyangballin/swesmith.x86_64.pylint-dev_1776_astroid.b114f6b5
+    selected_patches: 15
+
+  - repo: pygments__pygments.27649ebb
+    image_name: swebench/swesmith.x86_64.pygments_1776_pygments.27649ebb
+    source_image_name: jyangballin/swesmith.x86_64.pygments_1776_pygments.27649ebb
+    selected_patches: 15
+
+  - repo: pallets__jinja.ada0a9a6
+    image_name: swebench/swesmith.x86_64.pallets_1776_jinja.ada0a9a6
+    source_image_name: jyangballin/swesmith.x86_64.pallets_1776_jinja.ada0a9a6
+    selected_patches: 20
+
+  - repo: oauthlib__oauthlib.1fd52536
+    image_name: swebench/swesmith.x86_64.oauthlib_1776_oauthlib.1fd52536
+    source_image_name: jyangballin/swesmith.x86_64.oauthlib_1776_oauthlib.1fd52536
+    selected_patches: 18

@@ -97,3 +97,56 @@ bash scripts/check-install.sh
 
 问题描述生成的模型对比见 [Qwen 模型对比](docs/issue-model-comparison.md)，
 批量生成与自动审核方案见 [problem statement 质量控制](docs/problem-statement-quality-control.md)。
+
+## 多仓库单命令流水线
+
+`scripts/run-multirepo-batch.py` 将以下阶段串成一次可续跑的批处理：
+
+```text
+确认或拉取镜像
+  -> procedural mutation 生成
+  -> 按 mutation strategy 选择候选
+  -> Docker validation
+  -> 本地导出与多仓库合并
+  -> Qwen problem_statement 生成
+  -> 本地规则审核与 accepted/quarantine 分流
+```
+
+先只检查配置和将要执行的计划，不运行生产命令：
+
+```bash
+cd /data/repos/swe-smith-lab
+/data/venvs/swesmith/bin/python scripts/run-multirepo-batch.py \
+  --config configs/experiments/multirepo-procedural.yaml \
+  --run-id multirepo-smoke-001 \
+  --dry-run
+```
+
+正式运行时换一个新的 `run-id` 并去掉 `--dry-run`：
+
+```bash
+cd /data/repos/swe-smith-lab
+/data/venvs/swesmith/bin/python scripts/run-multirepo-batch.py \
+  --config configs/experiments/multirepo-procedural.yaml \
+  --run-id multirepo-20260914-001
+```
+
+如果 SSH、服务器或进程中断，使用完全相同的配置和 `run-id` 续跑：
+
+```bash
+cd /data/repos/swe-smith-lab
+/data/venvs/swesmith/bin/python scripts/run-multirepo-batch.py \
+  --config configs/experiments/multirepo-procedural.yaml \
+  --run-id multirepo-20260914-001 \
+  --resume
+```
+
+每个阶段结束后都会更新 `/data/results/multirepo-runs/<run-id>/manifest.json`。
+各仓库依次运行，默认 validation workers 为 1；问题描述生成完成后，最终数据位于：
+
+```text
+/data/results/multirepo-runs/<run-id>/issuegen/accepted.jsonl
+/data/results/multirepo-runs/<run-id>/issuegen/quarantine.jsonl
+```
+
+流水线不会检查 `/data` 剩余空间，也不会自动删除 Docker 镜像或历史产物。

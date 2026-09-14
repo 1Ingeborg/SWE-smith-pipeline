@@ -240,24 +240,30 @@ def main() -> None:
     write_json(manifest_json, manifest)
 
     try:
-        issuegen_command = [
-            str(args.issuegen_python),
-            str(args.launcher),
-            "-d",
-            str(input_json),
-            "-c",
-            str(args.config.resolve()),
-            "--demo_pool",
-            str(args.demo_pool.resolve()),
-            "--demo_seed",
-            str(args.demo_seed),
-            "-w",
-            str(args.workers),
-        ]
-        run_command(issuegen_command, cwd=workspace, env=env)
-        if not raw_json.exists():
-            raise RuntimeError(f"Issue generation did not produce {raw_json}")
-        raw_records = load_records(raw_json)
+        raw_records = load_records(raw_json) if raw_json.exists() else []
+        raw_ids = {row.get("instance_id") for row in raw_records}
+        can_reuse_raw = args.resume and raw_ids == set(instance_ids)
+        if can_reuse_raw:
+            print(f"Reusing complete issue generation output: {raw_json}", flush=True)
+        else:
+            issuegen_command = [
+                str(args.issuegen_python),
+                str(args.launcher),
+                "-d",
+                str(input_json),
+                "-c",
+                str(args.config.resolve()),
+                "--demo_pool",
+                str(args.demo_pool.resolve()),
+                "--demo_seed",
+                str(args.demo_seed),
+                "-w",
+                str(args.workers),
+            ]
+            run_command(issuegen_command, cwd=workspace, env=env)
+            if not raw_json.exists():
+                raise RuntimeError(f"Issue generation did not produce {raw_json}")
+            raw_records = load_records(raw_json)
         raw_ids = {row["instance_id"] for row in raw_records}
         missing_ids = sorted(set(instance_ids) - raw_ids)
         if missing_ids:
