@@ -30,6 +30,11 @@ def parse_args() -> argparse.Namespace:
         "--sweagent-executable", type=Path, default=DEFAULT_SWEAGENT_EXECUTABLE
     )
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Run only the first N validated public instances.",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
         "--mode",
@@ -63,6 +68,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("run-id contains unsafe characters")
     if args.workers < 1:
         raise ValueError("--workers must be positive")
+    if args.limit is not None and args.limit < 1:
+        raise ValueError("--limit must be positive")
     if args.per_instance_call_limit < 1:
         raise ValueError("--per-instance-call-limit must be positive")
     if args.per_instance_cost_limit < 0 or args.total_cost_limit < 0:
@@ -219,6 +226,10 @@ def main() -> None:
     validate_args(args)
     instances_path = args.instances.resolve()
     instances = load_public_instances(instances_path)
+    if args.limit is not None:
+        instances = instances[: args.limit]
+        if not instances:
+            raise ValueError("No public instances selected")
     expected_ids = {row["instance_id"] for row in instances}
     sweagent_root = args.sweagent_root.resolve()
     executable = args.sweagent_executable.resolve()
@@ -242,6 +253,14 @@ def main() -> None:
             f"Output directory already contains files; use --resume or a new run-id: {output_dir}"
         )
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.limit is not None:
+        instances_path = output_dir / "selected-public-instances.jsonl"
+        instances_path.write_text(
+            "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in instances),
+            encoding="utf-8",
+        )
+        args.instances = instances_path
 
     environment = os.environ.copy()
     if args.env_file:

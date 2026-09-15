@@ -17,6 +17,7 @@ def make_args(**overrides):
     values = {
         "run_id": "pilot-1",
         "workers": 1,
+        "limit": None,
         "per_instance_call_limit": 30,
         "per_instance_cost_limit": 2.0,
         "total_cost_limit": 12.0,
@@ -41,6 +42,11 @@ def test_model_mode_requires_explicit_api_gate():
     )
     with pytest.raises(ValueError, match="allow-api-calls"):
         MODULE.validate_args(args)
+
+
+def test_limit_must_be_positive():
+    with pytest.raises(ValueError, match="--limit must be positive"):
+        MODULE.validate_args(make_args(limit=0))
 
 
 def test_smoke_command_uses_no_external_model_and_disables_runtime_image(tmp_path):
