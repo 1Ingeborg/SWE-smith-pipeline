@@ -23,8 +23,10 @@ AutoDL GPU
 
 - Ubuntu 22.04 LTS
 - Python 3.10
-- SWE-smith commit: `9b74ac08118a85c39c356802f7961893af73e07f`
+- SWE-smith commit: `ad37c380ec8c7b775cdb11a074e408f90c874dad`
 - SWE-bench: `4.1.0`
+- SWE-agent: `v1.1.0`（独立 Python 3.11 环境）
+- SWE-ReX: `1.4.0`
 
 SWE-smith 当前提交仍使用 `swebench.harness.constants.DOCKER_USER`。该符号在 SWE-bench 5.x 中不可用，因此 CPU 环境暂时固定为 SWE-bench 4.1.0。
 
@@ -151,3 +153,41 @@ cd /data/repos/swe-smith-lab
 ```
 
 流水线不会检查 `/data` 剩余空间，也不会自动删除 Docker 镜像或历史产物。
+
+## 本地 Agent 修复与评测
+
+本仓库现在可以把 `accepted.jsonl` 转成防直接泄漏的本地 SWE-agent 任务镜像，运行固定版本 Agent，并用私有 F2P/P2P 真值评分。上游 SWE-smith 源码保持不修改；本地任务不依赖 Hugging Face 数据，也不要求将每条任务分支推送到 GitHub。
+
+```text
+accepted.jsonl
+  -> 私有选样与 opaque ID
+  -> 注入 bug、隐藏 F2P 测试、清洗 Git 历史
+  -> 公开五字段 instances.jsonl
+  -> SWE-agent preds.json / trajectories
+  -> 私有 Docker evaluator
+  -> resolved / unresolved
+```
+
+先安装固定版本 Agent：
+
+```bash
+cd /data/repos/swe-smith-lab
+bash scripts/bootstrap-swe-agent.sh
+```
+
+然后构建 pilot 并执行零费用冒烟：
+
+```bash
+/data/venvs/swesmith/bin/python scripts/prepare-agent-pilot.py \
+  --config configs/experiments/agent-pilot.yaml \
+  --run-id agent-pilot-example
+
+/data/venvs/swesmith/bin/python scripts/run-agent-pilot.py \
+  --instances /data/results/agent-pilot-runs/agent-pilot-example/public/instances.jsonl \
+  --run-id agent-smoke-example \
+  --workers 1
+```
+
+默认冒烟模式不调用外部模型 API。真实模型模式必须显式使用 `--allow-api-calls`，并受到调用次数与费用上限保护。
+
+源码逻辑、隐私边界、运行命令和实测结果见 [本地 SWE-agent 修复与评测流水线](docs/local-agent-evaluation.md)。
