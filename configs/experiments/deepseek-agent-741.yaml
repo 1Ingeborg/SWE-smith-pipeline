@@ -1,0 +1,23 @@
+schema_version: 1
+source:
+  dataset: /data/results/full-runs/deepseek-agent-741-20260918/tasks-for-agent.jsonl
+  audit: null
+run_root: /data/results/full-runs/deepseek-agent-741-20260918/agent-task-prep
+selection:
+  seed: 20260918
+  per_repository: 100000
+  require_full_quota: false
+task_images:
+  repository: swesmith-lab/rollout-task
+  platform: linux/x86_64
+  memory_limit: 10g
+  remove_f2p_tests: true
+  runtime:
+    enabled: true
+    repository: swesmith-lab/agent-runtime
+    package: swe-rex==1.4.0
+    tool_packages:
+    - tree-sitter==0.21.3
+    - tree-sitter-languages==1.10.2
+    index_url: http://mirrors.tencentyun.com/pypi/simple
+    trusted_host: mirrors.tencentyun.com
