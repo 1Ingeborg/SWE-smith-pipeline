@@ -127,6 +127,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--leakage-reviewer-model", default="qwen3.7-flash-2026-07-15")
     parser.add_argument("--factuality-reviewer-model", default="qwen3.7-flash-2026-07-15")
     parser.add_argument("--base-url", default="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    parser.add_argument("--api-key-env", default="DASHSCOPE_API_KEY")
     parser.add_argument("--max-output-tokens", type=int, default=800)
     parser.add_argument("--max-failing-tests", type=int, default=3)
     parser.add_argument("--max-rewrites", type=int, default=1)
@@ -150,9 +151,16 @@ def load_records(path: Path) -> list[dict[str, Any]]:
 
 
 def select_diverse_tests(test_ids: list[str], limit: int) -> list[str]:
+    # Non-Python example files are collected as test items by some suites
+    # (their node ids end in "::" with no test name). They are useless as
+    # behavioural evidence, so use them only when nothing else is available.
+    python_tests = [
+        test_id for test_id in test_ids if test_id.split("::", 1)[0].endswith(".py")
+    ]
+    candidates = python_tests or test_ids
     selected: list[str] = []
     groups: set[str] = set()
-    for test_id in test_ids:
+    for test_id in candidates:
         parts = test_id.split("::")
         group = "::".join(parts[:2])
         if group not in groups:
@@ -160,7 +168,7 @@ def select_diverse_tests(test_ids: list[str], limit: int) -> list[str]:
             groups.add(group)
         if len(selected) == limit:
             return selected
-    for test_id in test_ids:
+    for test_id in candidates:
         if test_id not in selected:
             selected.append(test_id)
         if len(selected) == limit:
@@ -181,7 +189,10 @@ def read_image_file(image: str, path: str) -> str:
 
 def extract_test(source: str, test_id: str) -> str:
     target = test_id.split("::")[-1].split("[")[0]
-    tree = ast.parse(source)
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return source[:12000]
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == target:
             segment = ast.get_source_segment(source, node)
@@ -334,12 +345,16 @@ def behavior_only(item: dict[str, Any]) -> str:
 
 def call_model(client: OpenAI, model: str, messages: list[dict[str, str]], max_tokens: int) -> tuple[str, dict[str, Any]]:
     started = time.perf_counter()
+    if "api.deepseek.com" in str(client.base_url):
+        extra_body = {"thinking": {"type": "disabled"}}
+    else:
+        extra_body = {"enable_thinking": False}
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=0,
         max_tokens=max_tokens,
-        extra_body={"enable_thinking": False},
+        extra_body=extra_body,
     )
     usage = response.usage
     return response.choices[0].message.content or "", {
@@ -546,6 +561,7 @@ def main() -> None:
     if args.workers < 1:
         raise ValueError("--workers must be at least 1")
 
+    prepared_handle = None
     if args.prepared_input:
         items = load_jsonl(args.prepared_input)
     else:
@@ -555,9 +571,47 @@ def main() -> None:
         if args.limit is not None:
             rows = rows[: args.limit]
         items = []
-        for index, row in enumerate(rows, 1):
-            print(f"preparing {index}/{len(rows)} {row['instance_id']}", flush=True)
-            items.append(prepare_item(row, args.max_failing_tests))
+        failures: list[tuple[str, str]] = []
+        if args.prepare_only:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            prepared_handle = args.output.open("w", encoding="utf-8", newline="\n")
+        try:
+            for index, row in enumerate(rows, 1):
+                print(f"preparing {index}/{len(rows)} {row['instance_id']}", flush=True)
+                try:
+                    item = prepare_item(row, args.max_failing_tests)
+                except Exception as error:
+                    message = f"{type(error).__name__}: {error}"
+                    failures.append((row["instance_id"], message))
+                    print(f"  SKIPPED {row['instance_id']} {message}", flush=True)
+                    continue
+                items.append(item)
+                if prepared_handle is not None:
+                    prepared_handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    prepared_handle.flush()
+        finally:
+            if prepared_handle is not None:
+                prepared_handle.close()
+        if failures:
+            failure_path = args.output.with_name(args.output.name + ".failures.jsonl")
+            with failure_path.open("w", encoding="utf-8", newline="\n") as handle:
+                for instance_id, message in failures:
+                    handle.write(
+                        json.dumps(
+                            {"instance_id": instance_id, "error": message},
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+            print(f"skipped {len(failures)} tasks; details in {failure_path}", flush=True)
+            # A few bad rows are expected. Mass failure means the harness
+            # itself is broken (docker down, images pruned) and must not be
+            # allowed to pass as a merely smaller batch.
+            if len(failures) > max(5, len(rows) // 100):
+                raise RuntimeError(
+                    f"{len(failures)} of {len(rows)} tasks failed preparation; "
+                    "aborting rather than continuing with a hollow batch"
+                )
 
     if args.candidate_input:
         candidates = {
@@ -578,15 +632,16 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.prepare_only:
-        with args.output.open("w", encoding="utf-8", newline="\n") as handle:
-            for item in items:
-                handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+        if prepared_handle is None:
+            with args.output.open("w", encoding="utf-8", newline="\n") as handle:
+                for item in items:
+                    handle.write(json.dumps(item, ensure_ascii=False) + "\n")
         print(f"wrote {len(items)} prepared inputs to {args.output}")
         return
 
-    api_key = os.getenv("DASHSCOPE_API_KEY")
+    api_key = os.getenv(args.api_key_env)
     if not api_key:
-        raise RuntimeError("DASHSCOPE_API_KEY is not set")
+        raise RuntimeError(f"{args.api_key_env} is not set")
 
     output_mode = "a" if args.resume else "w"
     with args.output.open(output_mode, encoding="utf-8", newline="\n") as handle:
