@@ -52,6 +52,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Validate configuration and print the plan without running it.",
     )
+    parser.add_argument(
+        "--stop-after",
+        choices=("candidates", "validation", "issues"),
+        default="issues",
+        help=(
+            "Checkpoint the run after candidate selection, Docker validation, "
+            "or issue generation. Resume the same run-id to continue."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -68,6 +77,16 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def yaml_files_semantically_equal(first: Path, second: Path) -> bool:
+    """Return whether two YAML files differ only in comments or formatting."""
+    try:
+        return yaml.safe_load(first.read_text(encoding="utf-8")) == yaml.safe_load(
+            second.read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, yaml.YAMLError):
+        return False
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -91,6 +110,158 @@ def count_records(path: Path) -> int:
             raise ValueError(f"Expected JSON array: {path}")
         return len(value)
     return sum(1 for line in text.splitlines() if line.strip())
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            records.append(json.loads(line))
+    return records
+
+
+def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    os.replace(temporary, path)
+
+
+def normalized_patch_fingerprint(record: dict[str, Any]) -> str:
+    patch = str(record.get("patch") or "").replace("\r\n", "\n")
+    patch = "\n".join(line.rstrip() for line in patch.splitlines()).strip()
+    if not patch:
+        payload = "missing-patch\0" + str(record.get("instance_id") or "")
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    payload = "\0".join(
+        (
+            str(record.get("repo") or ""),
+            str(record.get("base_commit") or ""),
+            patch,
+        )
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def build_candidate_queue(inputs: list[Path], output: Path) -> dict[str, Any]:
+    """Combine selected JSON arrays into a stable, duplicate-free JSONL queue."""
+    queued: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_patches: set[str] = set()
+    duplicate_ids = 0
+    duplicate_patches = 0
+    input_count = 0
+    for path in inputs:
+        records = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(records, list):
+            raise ValueError(f"Expected JSON array: {path}")
+        for raw in records:
+            input_count += 1
+            record = require_mapping(raw, f"candidate in {path}")
+            instance_id = str(record.get("instance_id") or "")
+            if not instance_id:
+                raise ValueError(f"Candidate has no instance_id: {path}")
+            fingerprint = str(
+                record.get("candidate_sha256")
+                or normalized_patch_fingerprint(record)
+            )
+            if instance_id in seen_ids:
+                duplicate_ids += 1
+                continue
+            if fingerprint in seen_patches:
+                duplicate_patches += 1
+                continue
+            seen_ids.add(instance_id)
+            seen_patches.add(fingerprint)
+            row = dict(record)
+            row["candidate_sha256"] = fingerprint
+            row["queue_status"] = "pending_validation"
+            queued.append(row)
+    write_jsonl(output, queued)
+    summary = {
+        "inputs": [str(path) for path in inputs],
+        "input_count": input_count,
+        "queued_count": len(queued),
+        "duplicate_instance_ids": duplicate_ids,
+        "duplicate_patches": duplicate_patches,
+    }
+    write_json(output.with_suffix(".summary.json"), summary)
+    return summary
+
+
+def build_rejection_report(summary_paths: list[Path], output: Path) -> dict[str, Any]:
+    rejected: list[dict[str, Any]] = []
+    reason_counts: dict[str, int] = {}
+    for path in summary_paths:
+        if not path.exists():
+            continue
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        for raw in summary.get("rejected", []):
+            record = require_mapping(raw, f"rejection in {path}")
+            row = dict(record)
+            row["source_summary"] = str(path)
+            rejected.append(row)
+            reason = str(row.get("reason") or "unknown")
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    write_jsonl(output, rejected)
+    result = {
+        "rejected_count": len(rejected),
+        "reason_counts": dict(sorted(reason_counts.items())),
+        "sources": [str(path) for path in summary_paths],
+    }
+    write_json(output.with_suffix(".summary.json"), result)
+    return result
+
+
+def record_stage_seconds(state: dict[str, Any], stage: str, started: float) -> None:
+    timings = state.setdefault("stage_seconds", {})
+    timings[stage] = round(float(timings.get(stage, 0.0)) + time.monotonic() - started, 3)
+
+
+def write_validation_gate(validated_path: Path, gate_path: Path) -> int:
+    """Write the ``logs/task_insts/<repo>.json`` gate the combine strategies read.
+
+    They only consult ``instance_id`` and strip the ``<repo>.`` prefix, so the
+    lab's own validated output is a drop-in source for that gate. Using it keeps
+    the "combine only already-validated patches" guarantee without running
+    ``swesmith.harness.gather`` (which would push branches to GitHub).
+    """
+    rows = [
+        {"instance_id": record["instance_id"]}
+        for record in read_jsonl(validated_path)
+        if record.get("instance_id")
+    ]
+    write_json(gate_path, rows)
+    return len(rows)
+
+
+def filter_patch_records(
+    source: Path, destination: Path, prefixes: tuple[str, ...]
+) -> int:
+    """Keep collected patches whose instance-id suffix starts with a prefix.
+
+    Keyed on ``instance_id`` rather than ``strategy`` because the upstream
+    combine entry points write metadata holding only ``patch_files`` and
+    ``num_patch_files`` -- no ``strategy`` key survives into the collected
+    record, so filtering on it would drop every combined patch.
+    """
+    records = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(records, list):
+        raise ValueError(f"Expected JSON array: {source}")
+    kept = []
+    for record in records:
+        instance_id = str(record.get("instance_id") or "")
+        # Mirrors the upstream convention: repo names themselves contain dots,
+        # so the suffix is whatever follows the last one.
+        suffix = instance_id.split(".")[-1]
+        if suffix.startswith(prefixes):
+            kept.append(record)
+    write_json(destination, kept)
+    return len(kept)
 
 
 def target_result(actual: int, target: int | None) -> dict[str, Any]:
@@ -123,6 +294,66 @@ def optional_int(value: Any, name: str) -> int | None:
     if value is None:
         return None
     return positive_int(value, name)
+
+
+def whole_int(value: Any, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    return value
+
+
+# Bug-injection strategies, mapped to the pipeline stage each one runs in.
+# "generate" strategies produce fresh bugs before collect/validate. The combine
+# strategies merge already-validated patches, so they must run after validation.
+STRATEGY_STAGES: dict[str, str] = {
+    "procedural": "generate",
+    "lm_modify": "generate",
+    "lm_rewrite": "generate",
+    "pr_mirror": "generate",
+    "combine_file": "post_validate",
+    "combine_module": "post_validate",
+}
+
+# Omitting generation.strategies keeps the original single-strategy behaviour.
+DEFAULT_STRATEGIES: dict[str, dict[str, Any]] = {"procedural": {"enabled": True}}
+
+
+def load_strategies(generation: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    raw = generation.get("strategies")
+    if raw is None:
+        return {name: dict(spec) for name, spec in DEFAULT_STRATEGIES.items()}
+    raw = require_mapping(raw, "generation.strategies")
+    strategies: dict[str, dict[str, Any]] = {}
+    for name, value in raw.items():
+        if name not in STRATEGY_STAGES:
+            raise ValueError(
+                f"generation.strategies.{name} is not a known strategy; "
+                f"expected one of {sorted(STRATEGY_STAGES)}"
+            )
+        spec = require_mapping(
+            value if value is not None else {}, f"generation.strategies.{name}"
+        )
+        spec = dict(spec)
+        enabled = spec.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError(
+                f"generation.strategies.{name}.enabled must be a boolean"
+            )
+        spec["enabled"] = enabled
+        strategies[name] = spec
+    if not strategies:
+        raise ValueError("generation.strategies must list at least one strategy")
+    return strategies
+
+
+def enabled_strategies(
+    strategies: dict[str, dict[str, Any]], stage: str
+) -> dict[str, dict[str, Any]]:
+    return {
+        name: spec
+        for name, spec in strategies.items()
+        if spec.get("enabled") and STRATEGY_STAGES[name] == stage
+    }
 
 
 def load_config(path: Path) -> tuple[dict[str, Any], list[RepoPlan]]:
@@ -223,6 +454,11 @@ def load_config(path: Path) -> tuple[dict[str, Any], list[RepoPlan]]:
     target_validated = optional_int(config.get("target_validated"), "target_validated")
     config["validation_workers"] = validation_workers
     config["target_validated"] = target_validated
+    config["generation_strategies"] = load_strategies(generation)
+    config["combine_selected_patches"] = positive_int(
+        generation.get("combine_selected_patches", 15),
+        "generation.combine_selected_patches",
+    )
     return config, plans
 
 
@@ -402,7 +638,9 @@ def materialize_repo_from_image(
     return "copied_from_image"
 
 
-def generation_command(python: Path, plan: RepoPlan) -> list[str]:
+def generation_command(
+    python: Path, plan: RepoPlan, *, interleave: bool = True
+) -> list[str]:
     command = [
         str(python),
         "-m",
@@ -412,19 +650,338 @@ def generation_command(python: Path, plan: RepoPlan) -> list[str]:
         str(plan.max_bugs_per_modifier),
         "--seed",
         str(plan.seed),
-        "--interleave",
-        "--max_entities",
-        str(plan.max_entities),
-        "--max_candidates",
-        str(plan.max_candidates),
     ]
+    if interleave:
+        command.append("--interleave")
+    command.extend(
+        [
+            "--max_entities",
+            str(plan.max_entities),
+            "--max_candidates",
+            str(plan.max_candidates),
+        ]
+    )
     if plan.timeout_seconds is not None:
         command.extend(["--timeout_seconds", str(plan.timeout_seconds)])
     return command
 
 
+def strategy_config_file(spec: dict[str, Any], name: str) -> str:
+    value = spec.get("config_file")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"generation.strategies.{name}.config_file must be a non-empty string"
+        )
+    return value
+
+
+def procedural_command(
+    python: Path, plan: RepoPlan, spec: dict[str, Any]
+) -> list[str]:
+    return generation_command(
+        python, plan, interleave=bool(spec.get("interleave", True))
+    )
+
+
+def lm_modify_command(
+    python: Path, plan: RepoPlan, spec: dict[str, Any]
+) -> list[str]:
+    command = [
+        str(python),
+        "-m",
+        "swesmith.bug_gen.llm.modify",
+        plan.repo,
+        "--config_file",
+        strategy_config_file(spec, "lm_modify"),
+        "--model",
+        str(spec.get("model", "openai/gpt-4o")),
+        "--n_bugs",
+        str(positive_int(spec.get("n_bugs", 1), "lm_modify.n_bugs")),
+        "--n_workers",
+        str(positive_int(spec.get("n_workers", 1), "lm_modify.n_workers")),
+    ]
+    if spec.get("max_bugs") is not None:
+        command.extend(
+            ["--max_bugs", str(positive_int(spec["max_bugs"], "lm_modify.max_bugs"))]
+        )
+    return command
+
+
+def lm_rewrite_command(
+    python: Path, plan: RepoPlan, spec: dict[str, Any]
+) -> list[str]:
+    command = [
+        str(python),
+        "-m",
+        "swesmith.bug_gen.llm.rewrite",
+        plan.repo,
+        "--config_file",
+        strategy_config_file(spec, "lm_rewrite"),
+        "--n_workers",
+        str(positive_int(spec.get("n_workers", 1), "lm_rewrite.n_workers")),
+    ]
+    if spec.get("model"):
+        command.extend(["--model", str(spec["model"])])
+    if spec.get("max_bugs") is not None:
+        command.extend(
+            ["--max_bugs", str(positive_int(spec["max_bugs"], "lm_rewrite.max_bugs"))]
+        )
+    if spec.get("redo_existing"):
+        command.append("--redo_existing")
+    return command
+
+
+def pr_mirror_command(
+    python: Path, plan: RepoPlan, spec: dict[str, Any]
+) -> list[str]:
+    files = spec.get("instances_files") or []
+    if not isinstance(files, list) or not files:
+        raise ValueError(
+            "generation.strategies.pr_mirror.instances_files must be a non-empty list"
+        )
+    command = [
+        str(python),
+        "-m",
+        "swesmith.bug_gen.mirror.generate",
+        *[str(entry) for entry in files],
+        "--model",
+        str(spec.get("model", "openai/gpt-4o")),
+        "--num_processes",
+        str(positive_int(spec.get("num_processes", 1), "pr_mirror.num_processes")),
+    ]
+    if spec.get("redo_existing"):
+        command.append("--redo_existing")
+    return command
+
+
+STRATEGY_COMMAND_BUILDERS = {
+    "procedural": procedural_command,
+    "lm_modify": lm_modify_command,
+    "lm_rewrite": lm_rewrite_command,
+    "pr_mirror": pr_mirror_command,
+}
+
+
+# These strategies import litellm, which the main swesmith venv cannot load on
+# Python 3.10 (litellm 1.100.1 imports typing.NotRequired). They must therefore
+# run on the separate interpreter configured as paths.llm_python.
+LLM_STRATEGIES = frozenset({"lm_modify", "lm_rewrite", "pr_mirror"})
+
+
+def generation_commands(
+    python: Path,
+    plan: RepoPlan,
+    strategies: dict[str, dict[str, Any]],
+    *,
+    llm_python: Path | None = None,
+) -> list[tuple[str, list[str]]]:
+    """Return (strategy name, command) pairs for every enabled generate strategy."""
+    commands: list[tuple[str, list[str]]] = []
+    for name, spec in enabled_strategies(strategies, "generate").items():
+        interpreter = python
+        if name in LLM_STRATEGIES:
+            if llm_python is None:
+                raise ValueError(
+                    f"paths.llm_python is required to run the {name} strategy; "
+                    "the main swesmith venv cannot import litellm"
+                )
+            interpreter = llm_python
+        commands.append(
+            (name, STRATEGY_COMMAND_BUILDERS[name](interpreter, plan, spec))
+        )
+    return commands
+
+
+def combine_command(
+    python: Path,
+    name: str,
+    spec: dict[str, Any],
+    bug_gen_dir: str,
+) -> list[str]:
+    """Build a combine command.
+
+    ``bug_gen_dir`` must be the *relative* ``logs/bug_gen/<repo>`` path: the
+    upstream entry points assert ``bug_gen_dir.startswith("logs/bug_gen")``
+    before doing anything, so an absolute path raises AssertionError. The caller
+    therefore runs this with ``cwd=mutation_workspace``.
+    """
+    module = (
+        "swesmith.bug_gen.combine.same_file"
+        if name == "combine_file"
+        else "swesmith.bug_gen.combine.same_module"
+    )
+    command = [
+        str(python),
+        "-m",
+        module,
+        bug_gen_dir,
+        "--num_patches",
+        str(positive_int(spec.get("num_patches", 2), f"{name}.num_patches")),
+        "--max_combos",
+        str(positive_int(spec.get("max_combos", 100), f"{name}.max_combos")),
+    ]
+    if name == "combine_file":
+        command.extend(
+            [
+                "--limit_per_file",
+                str(whole_int(spec.get("limit_per_file", -1), f"{name}.limit_per_file")),
+            ]
+        )
+    else:
+        command.extend(
+            [
+                "--limit_per_module",
+                str(
+                    whole_int(
+                        spec.get("limit_per_module", -1), f"{name}.limit_per_module"
+                    )
+                ),
+                "--depth",
+                str(positive_int(spec.get("depth", 3), f"{name}.depth")),
+            ]
+        )
+    if spec.get("include_invalid_patches"):
+        command.append("--include_invalid_patches")
+    return command
+
+
+def run_combine_stage(
+    *,
+    plan: RepoPlan,
+    slug: str,
+    combiners: dict[str, dict[str, Any]],
+    validated_output: Path,
+    run_dir: Path,
+    mutation_workspace: Path,
+    python: Path,
+    env: dict[str, str],
+    validation_workers: int,
+    combine_selected_patches: int,
+    log_dir: Path,
+) -> Path | None:
+    """Merge already-validated patches, then re-collect, validate and export them."""
+    combine_workspace = run_dir / "combine-workspace"
+    combine_workspace.mkdir(parents=True, exist_ok=True)
+
+    # The combine entry points read logs/task_insts/<repo>.json relative to cwd.
+    gate_dir = combine_workspace / "logs" / "task_insts"
+    gate_dir.mkdir(parents=True, exist_ok=True)
+    gated = write_validation_gate(validated_output, gate_dir / f"{plan.repo}.json")
+    if gated == 0:
+        print(f"No validated patches to combine for {plan.repo}; skipping.", flush=True)
+        return None
+    print(f"Combine gate for {plan.repo}: {gated} validated instances", flush=True)
+
+    bug_dir = mutation_workspace / "logs" / "bug_gen" / plan.repo
+    checkout = mutation_workspace / plan.repo
+    if not checkout.is_dir():
+        # The last generator removed its checkout on completion, so restore one
+        # for combine rather than letting it fall back to a GitHub clone.
+        materialize_repo_from_image(
+            plan.image_name,
+            checkout,
+            cwd=mutation_workspace,
+            env=env,
+            log_path=log_dir / "combine.source.log",
+        )
+
+    # Both entry points assert that bug_gen_dir starts with the *relative* path
+    # "logs/bug_gen", and both finish with `rm -rf <repo>`. Exposing the real
+    # directories through symlinks inside this throwaway workspace satisfies the
+    # assertion while keeping the real bug_gen tree and checkout out of reach of
+    # that cleanup.
+    bug_link = combine_workspace / "logs" / "bug_gen" / plan.repo
+    bug_link.parent.mkdir(parents=True, exist_ok=True)
+    if not bug_link.exists():
+        bug_link.symlink_to(bug_dir, target_is_directory=True)
+    relative_bug_dir = f"logs/bug_gen/{plan.repo}"
+
+    for name, spec in combiners.items():
+        link = combine_workspace / plan.repo
+        if not link.exists():
+            if not checkout.is_dir():
+                raise RuntimeError(
+                    f"Missing repository checkout for combine: {checkout}"
+                )
+            link.symlink_to(checkout, target_is_directory=True)
+        run_command(
+            combine_command(python, name, spec, relative_bug_dir),
+            cwd=combine_workspace,
+            env=env,
+            log_path=log_dir / f"combine.{name}.log",
+        )
+
+    collected = bug_dir.parent / f"{plan.repo}_all_patches.json"
+    run_command(
+        [str(python), "-m", "swesmith.bug_gen.collect_patches", str(bug_dir)],
+        cwd=mutation_workspace,
+        env=env,
+        log_path=log_dir / "combine.collect.log",
+    )
+    candidates = run_dir / "candidates" / f"{slug}__combine.json"
+    kept = filter_patch_records(
+        collected, candidates, ("combine_file", "combine_module")
+    )
+    if kept == 0:
+        print(f"Combine produced no candidates for {plan.repo}.", flush=True)
+        return None
+
+    selected = run_dir / "candidates" / f"{slug}__combine_selected.json"
+    run_command(
+        [
+            str(python),
+            str(SCRIPT_DIR / "select-diverse-candidates.py"),
+            str(candidates),
+            str(selected),
+            "--limit",
+            str(combine_selected_patches),
+            "--seed",
+            str(plan.selection_seed),
+        ],
+        cwd=LAB_REPO,
+        env=env,
+        log_path=log_dir / "combine.select.log",
+    )
+
+    validation_dir = mutation_workspace / "logs" / "run_validation" / plan.repo
+    run_command(
+        [
+            str(python),
+            "-m",
+            "swesmith.harness.valid",
+            str(selected),
+            "--workers",
+            str(validation_workers),
+        ],
+        cwd=mutation_workspace,
+        env=env,
+        log_path=log_dir / "combine.validate.log",
+    )
+
+    output = run_dir / "validated" / f"{slug}__combine.jsonl"
+    run_command(
+        [
+            str(python),
+            str(SCRIPT_DIR / "export-valid-local.py"),
+            str(selected),
+            str(validation_dir),
+            str(output),
+            "--image-name",
+            plan.image_name,
+        ],
+        cwd=LAB_REPO,
+        env=env,
+        log_path=log_dir / "combine.export.log",
+    )
+    return output
+
+
 def print_plan(
-    config: dict[str, Any], plans: list[RepoPlan], config_path: Path, run_id: str
+    config: dict[str, Any],
+    plans: list[RepoPlan],
+    config_path: Path,
+    run_id: str,
+    stop_after: str,
 ) -> None:
     paths = require_mapping(config.get("paths", {}), "paths")
     run_root = resolve_path(paths.get("run_root", "/data/results/multirepo-runs"))
@@ -432,6 +989,14 @@ def print_plan(
     print(f"Run directory: {run_root / run_id}")
     print(f"Validation workers: {config['validation_workers']}")
     print(f"Target validated: {config['target_validated'] or 'all configured repos'}")
+    print(f"Stop after: {stop_after}")
+    print(f"Repository selection: all {len(plans)} configured repositories")
+    active = [
+        name
+        for name, spec in config.get("generation_strategies", {}).items()
+        if spec.get("enabled")
+    ]
+    print(f"Strategies: {', '.join(active) if active else 'none'}")
     print("Disk-space checking: disabled")
     print("Repository source: Docker image /testbed (GitHub clone not required)")
     print("Repositories:")
@@ -450,7 +1015,8 @@ def main() -> None:
     if not config_path.is_file():
         raise FileNotFoundError(config_path)
     config, plans = load_config(config_path)
-    print_plan(config, plans, config_path, args.run_id)
+    all_plans = plans
+    print_plan(config, plans, config_path, args.run_id, args.stop_after)
     if args.dry_run:
         print("Dry run completed; no production commands were executed.")
         return
@@ -463,6 +1029,8 @@ def main() -> None:
     issuegen_python = resolve_path(
         paths.get("issuegen_python", "/data/venvs/swesmith-issuegen/bin/python")
     )
+    llm_python_value = paths.get("llm_python")
+    llm_python = resolve_path(llm_python_value) if llm_python_value else None
     run_root = resolve_path(paths.get("run_root", "/data/results/multirepo-runs"))
     for required in (swesmith_repo, swesmith_python):
         if not required.exists():
@@ -478,7 +1046,16 @@ def main() -> None:
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("config_sha256") != config_digest:
-            raise RuntimeError("Resume config does not match the original run config")
+            snapshot = run_dir / "config.snapshot.yaml"
+            if not snapshot.is_file() or not yaml_files_semantically_equal(
+                snapshot, config_path
+            ):
+                raise RuntimeError("Resume config does not match the original run config")
+            # Comment-only and formatting-only edits are safe to resume. Refresh
+            # both metadata and the snapshot so future checks use the new file.
+            manifest["config_sha256"] = config_digest
+            manifest["config_metadata_refreshed_at_unix"] = time.time()
+            shutil.copy2(config_path, snapshot)
     else:
         manifest = {
             "schema_version": 1,
@@ -500,6 +1077,9 @@ def main() -> None:
     (run_dir / "candidates").mkdir(exist_ok=True)
     (run_dir / "validated").mkdir(exist_ok=True)
     manifest["status"] = "running"
+    manifest["requested_stop_after"] = args.stop_after
+    manifest["last_selected_repositories"] = [plan.repo for plan in plans]
+    manifest["last_started_at_unix"] = time.time()
     manifest.pop("error", None)
     manifest.pop("finished_at_unix", None)
     write_json(manifest_path, manifest)
@@ -515,7 +1095,9 @@ def main() -> None:
     env["HF_HUB_OFFLINE"] = "1"
     env["HF_DATASETS_OFFLINE"] = "1"
 
+    candidate_outputs: list[Path] = []
     validated_outputs: list[Path] = []
+    rejection_summaries: list[Path] = []
     validated_total = 0
     target_validated = config["target_validated"]
     try:
@@ -551,6 +1133,7 @@ def main() -> None:
                 repo_state["stages"].get("image") != "completed"
                 or not image_is_present
             ):
+                stage_started = time.monotonic()
                 repo_state["image_action"] = ensure_image(
                     plan,
                     cwd=mutation_workspace,
@@ -558,10 +1141,12 @@ def main() -> None:
                     log_path=repo_log_dir / "image.log",
                 )
                 repo_state["stages"]["image"] = "completed"
+                record_stage_seconds(repo_state, "image", stage_started)
                 write_json(manifest_path, manifest)
 
             bug_dir = mutation_workspace / "logs" / "bug_gen" / plan.repo
             if repo_state["stages"].get("generate") != "completed":
+                stage_started = time.monotonic()
                 checkout = mutation_workspace / plan.repo
                 repo_state["source_action"] = materialize_repo_from_image(
                     plan.image_name,
@@ -572,19 +1157,44 @@ def main() -> None:
                 )
                 repo_state["source"] = f"{plan.image_name}:/testbed"
                 write_json(manifest_path, manifest)
-                run_command(
-                    generation_command(swesmith_python, plan),
-                    cwd=mutation_workspace,
-                    env=env,
-                    log_path=repo_log_dir / "generate.log",
+                generators = generation_commands(
+                    swesmith_python,
+                    plan,
+                    config["generation_strategies"],
+                    llm_python=llm_python,
                 )
+                if not generators:
+                    raise RuntimeError(
+                        f"No generate-stage strategy is enabled for {plan.repo}"
+                    )
+                for strategy_name, command in generators:
+                    # Upstream generators rmtree their checkout on completion, so
+                    # restore it before every strategy that needs one. This is
+                    # idempotent and avoids the GitHub clone path entirely.
+                    if not checkout.is_dir():
+                        materialize_repo_from_image(
+                            plan.image_name,
+                            checkout,
+                            cwd=mutation_workspace,
+                            env=env,
+                            log_path=repo_log_dir / f"source.{strategy_name}.log",
+                        )
+                    run_command(
+                        command,
+                        cwd=mutation_workspace,
+                        env=env,
+                        log_path=repo_log_dir / f"generate.{strategy_name}.log",
+                    )
                 if not bug_dir.is_dir() or not any(bug_dir.rglob("*.diff")):
                     raise RuntimeError(f"Generation produced no patches for {plan.repo}")
+                repo_state["generate_strategies"] = [name for name, _ in generators]
                 repo_state["stages"]["generate"] = "completed"
+                record_stage_seconds(repo_state, "generate", stage_started)
                 write_json(manifest_path, manifest)
 
             collected = bug_dir.parent / f"{plan.repo}_all_patches.json"
             if repo_state["stages"].get("collect") != "completed" or not collected.exists():
+                stage_started = time.monotonic()
                 run_command(
                     [
                         str(swesmith_python),
@@ -600,10 +1210,12 @@ def main() -> None:
                     raise RuntimeError(f"Patch collection produced no file for {plan.repo}")
                 repo_state["stages"]["collect"] = "completed"
                 repo_state["collected_count"] = count_records(collected)
+                record_stage_seconds(repo_state, "collect", stage_started)
                 write_json(manifest_path, manifest)
 
             selected = run_dir / "candidates" / f"{slug}.json"
             if repo_state["stages"].get("select") != "completed" or not selected.exists():
+                stage_started = time.monotonic()
                 run_command(
                     [
                         str(swesmith_python),
@@ -621,10 +1233,18 @@ def main() -> None:
                 )
                 repo_state["stages"]["select"] = "completed"
                 repo_state["candidate_count"] = count_records(selected)
+                record_stage_seconds(repo_state, "select", stage_started)
                 write_json(manifest_path, manifest)
+            candidate_outputs.append(selected)
+
+            if args.stop_after == "candidates":
+                repo_state["status"] = "candidates_ready"
+                write_json(manifest_path, manifest)
+                continue
 
             validation_dir = mutation_workspace / "logs" / "run_validation" / plan.repo
             if repo_state["stages"].get("validate") != "completed":
+                stage_started = time.monotonic()
                 run_command(
                     [
                         str(swesmith_python),
@@ -639,9 +1259,11 @@ def main() -> None:
                     log_path=repo_log_dir / "validate.log",
                 )
                 repo_state["stages"]["validate"] = "completed"
+                record_stage_seconds(repo_state, "validate", stage_started)
                 write_json(manifest_path, manifest)
 
             if repo_state["stages"].get("export") != "completed" or not validated_output.exists():
+                stage_started = time.monotonic()
                 run_command(
                     [
                         str(swesmith_python),
@@ -657,15 +1279,85 @@ def main() -> None:
                     log_path=repo_log_dir / "export.log",
                 )
                 repo_state["stages"]["export"] = "completed"
+                record_stage_seconds(repo_state, "export", stage_started)
                 write_json(manifest_path, manifest)
 
             valid_count = count_records(validated_output)
             repo_state["valid_count"] = valid_count
-            repo_state["status"] = "completed"
             validated_outputs.append(validated_output)
+            rejection_summaries.append(validated_output.with_suffix(".summary.json"))
             validated_total += valid_count
             manifest["validated_count"] = validated_total
             write_json(manifest_path, manifest)
+
+            combiners = enabled_strategies(
+                config["generation_strategies"], "post_validate"
+            )
+            if combiners and repo_state["stages"].get("combine") != "completed":
+                combine_output = run_combine_stage(
+                    plan=plan,
+                    slug=slug,
+                    combiners=combiners,
+                    validated_output=validated_output,
+                    run_dir=run_dir,
+                    mutation_workspace=mutation_workspace,
+                    python=swesmith_python,
+                    env=env,
+                    validation_workers=config["validation_workers"],
+                    combine_selected_patches=config["combine_selected_patches"],
+                    log_dir=repo_log_dir,
+                )
+                repo_state["stages"]["combine"] = "completed"
+                if combine_output is not None:
+                    combine_count = count_records(combine_output)
+                    repo_state["combine_valid_count"] = combine_count
+                    validated_outputs.append(combine_output)
+                    rejection_summaries.append(
+                        combine_output.with_suffix(".summary.json")
+                    )
+                    validated_total += combine_count
+                    manifest["validated_count"] = validated_total
+                write_json(manifest_path, manifest)
+
+            repo_state["status"] = "completed"
+            write_json(manifest_path, manifest)
+
+        # Rebuild the root queue from every repository artifact created so far.
+        # This also preserves completed outputs when resuming an interrupted run.
+        candidate_outputs = [
+            run_dir / "candidates" / f"{repo_slug(plan.repo)}.json"
+            for plan in all_plans
+            if (run_dir / "candidates" / f"{repo_slug(plan.repo)}.json").is_file()
+        ]
+        if not candidate_outputs:
+            raise RuntimeError("No repository produced a candidate output")
+        candidate_queue = run_dir / "candidates.jsonl"
+        candidate_summary = build_candidate_queue(candidate_outputs, candidate_queue)
+        manifest["candidate_count"] = candidate_summary["queued_count"]
+        manifest["candidate_repository_count"] = len(candidate_outputs)
+        manifest["configured_repository_count"] = len(all_plans)
+        manifest["missing_candidate_repositories"] = [
+            plan.repo
+            for plan in all_plans
+            if not (run_dir / "candidates" / f"{repo_slug(plan.repo)}.json").is_file()
+        ]
+        manifest.setdefault("artifacts", {})["candidates"] = str(candidate_queue)
+        manifest["candidate_deduplication"] = candidate_summary
+        write_json(manifest_path, manifest)
+
+        if args.stop_after == "candidates":
+            manifest["status"] = (
+                "completed_candidates"
+                if not manifest["missing_candidate_repositories"]
+                else "completed_candidates_partial"
+            )
+            manifest["finished_at_unix"] = time.time()
+            manifest["last_elapsed_seconds"] = round(
+                manifest["finished_at_unix"] - manifest["last_started_at_unix"], 3
+            )
+            write_json(manifest_path, manifest)
+            print(f"Run status={manifest['status']}: {manifest_path}")
+            return
 
         if not validated_outputs:
             raise RuntimeError("No repository produced a validated output")
@@ -687,8 +1379,25 @@ def main() -> None:
         validated_total = count_records(combined)
         manifest["validated_count"] = validated_total
         manifest.update(target_result(validated_total, target_validated))
-        manifest["artifacts"] = {"validated": str(combined)}
+        manifest.setdefault("artifacts", {})["validated"] = str(combined)
+        rejected_output = run_dir / "rejected.jsonl"
+        rejection_report = build_rejection_report(
+            rejection_summaries, rejected_output
+        )
+        manifest["artifacts"]["rejected"] = str(rejected_output)
+        manifest["validation_rejections"] = rejection_report
         write_json(manifest_path, manifest)
+
+        if args.stop_after == "validation":
+            suffix = "" if manifest["target_reached"] else "_with_shortfall"
+            manifest["status"] = f"completed_validation{suffix}"
+            manifest["finished_at_unix"] = time.time()
+            manifest["last_elapsed_seconds"] = round(
+                manifest["finished_at_unix"] - manifest["last_started_at_unix"], 3
+            )
+            write_json(manifest_path, manifest)
+            print(f"Run status={manifest['status']}: {manifest_path}")
+            return
 
         issue = require_mapping(config.get("issue_generation", {}), "issue_generation")
         if issue.get("enabled", True):
@@ -766,6 +1475,9 @@ def main() -> None:
             else "completed_with_shortfall"
         )
         manifest["finished_at_unix"] = time.time()
+        manifest["last_elapsed_seconds"] = round(
+            manifest["finished_at_unix"] - manifest["last_started_at_unix"], 3
+        )
         manifest.pop("error", None)
         write_json(manifest_path, manifest)
     except Exception as error:

@@ -3,6 +3,7 @@
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 
 
@@ -55,11 +56,14 @@ def main() -> None:
             output_file.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     summary_path = args.output.with_suffix(".summary.json")
+    reason_counts = Counter(row["reason"] for row in rejected)
     summary_path.write_text(
         json.dumps(
             {
                 "input_candidates": len(candidates),
                 "valid": len(valid),
+                "rejected_count": len(rejected),
+                "rejection_reason_counts": dict(sorted(reason_counts.items())),
                 "rejected": rejected,
             },
             ensure_ascii=False,

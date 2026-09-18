@@ -102,7 +102,7 @@ bash scripts/check-install.sh
 
 ## 多仓库单命令流水线
 
-`scripts/run-multirepo-batch.py` 将以下阶段串成一次可续跑的批处理：
+`scripts/run-multirepo-pipeline.py` 将以下阶段串成一次可续跑的统一流水线：
 
 ```text
 确认或拉取镜像
@@ -119,7 +119,7 @@ bash scripts/check-install.sh
 
 ```bash
 cd /data/repos/swe-smith-lab
-/data/venvs/swesmith/bin/python scripts/run-multirepo-batch.py \
+/data/venvs/swesmith/bin/python scripts/run-multirepo-pipeline.py \
   --config configs/experiments/multirepo-procedural.yaml \
   --run-id multirepo-smoke-001 \
   --dry-run
@@ -129,7 +129,7 @@ cd /data/repos/swe-smith-lab
 
 ```bash
 cd /data/repos/swe-smith-lab
-/data/venvs/swesmith/bin/python scripts/run-multirepo-batch.py \
+/data/venvs/swesmith/bin/python scripts/run-multirepo-pipeline.py \
   --config configs/experiments/multirepo-procedural.yaml \
   --run-id multirepo-20260914-001
 ```
@@ -138,7 +138,7 @@ cd /data/repos/swe-smith-lab
 
 ```bash
 cd /data/repos/swe-smith-lab
-/data/venvs/swesmith/bin/python scripts/run-multirepo-batch.py \
+/data/venvs/swesmith/bin/python scripts/run-multirepo-pipeline.py \
   --config configs/experiments/multirepo-procedural.yaml \
   --run-id multirepo-20260914-001 \
   --resume

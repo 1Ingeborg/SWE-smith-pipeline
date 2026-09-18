@@ -1,0 +1,30 @@
+schema_version: 1
+
+paths:
+  swesmith_repo: /data/repos/SWE-smith
+  swesmith_python: /data/venvs/swesmith/bin/python
+  issuegen_python: /data/venvs/swesmith-issuegen/bin/python
+  run_root: /data/results/multirepo-runs
+
+# One candidate from one repository: this file is only for pipeline smoke tests.
+target_validated: 1
+validation_workers: 1
+
+generation:
+  selected_patches: 1
+  max_bugs_per_modifier: 1
+  max_entities: 100
+  max_candidates: 10
+  timeout_seconds: 600
+  seed: 42
+  selection_seed: 42
+
+# A smoke test must not spend issue-generation API tokens.
+issue_generation:
+  enabled: false
+
+repositories:
+  - repo: pygments__pygments.27649ebb
+    image_name: swebench/swesmith.x86_64.pygments_1776_pygments.27649ebb
+    source_image_name: jyangballin/swesmith.x86_64.pygments_1776_pygments.27649ebb
+    selected_patches: 1
