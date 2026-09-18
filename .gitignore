@@ -20,7 +20,7 @@ __pycache__/
 logs/
 datasets/
 artifacts/
-results/
+results
 tasks/
 trajectories/
 models/
