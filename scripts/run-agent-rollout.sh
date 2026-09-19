@@ -78,6 +78,11 @@ stage_prepare() {
         --config "$PREPARE_CONFIG" \
         --run-id "$PREP_ID" \
         "${extra[@]}" 2>&1 | tee -a "$LOGS/01-prepare.log"
+    local status=${PIPESTATUS[0]}
+    if [ "$status" -ne 0 ]; then
+        echo "[$(stamp)] prepare failed (exit $status); see $LOGS/01-prepare.log" >&2
+        return "$status"
+    fi
 
     local ready; ready=$(wc -l < "$INSTANCES")
     echo "[$(stamp)] prepare done: $ready public instances"
@@ -130,6 +135,11 @@ MSG
         --per-instance-cost-limit "$PER_INSTANCE_COST_LIMIT" \
         --total-cost-limit "$TOTAL_COST_LIMIT" \
         "${extra[@]}" 2>&1 | tee -a "$LOGS/02-agent.log"
+    local status=${PIPESTATUS[0]}
+    if [ "$status" -ne 0 ]; then
+        echo "[$(stamp)] agent failed (exit $status); see $LOGS/02-agent.log" >&2
+        return "$status"
+    fi
     echo "[$(stamp)] agent done -> $PREDS"
 }
 
@@ -147,7 +157,12 @@ stage_eval() {
         --run-id "$EVAL_ID" \
         --output-root "$RUN_DIR/evaluations" \
         --workers "$WORKERS_EVAL" \
-        "${extra[@]}" 2>&1 | tee -a "$LOGS/03-eval.log"
+        --timeout-seconds "${EVAL_TIMEOUT_SECONDS:-120}" \n        "${extra[@]}" 2>&1 | tee -a "$LOGS/03-eval.log"
+    local status=${PIPESTATUS[0]}
+    if [ "$status" -ne 0 ]; then
+        echo "[$(stamp)] eval failed (exit $status); see $LOGS/03-eval.log" >&2
+        return "$status"
+    fi
     echo "[$(stamp)] eval done -> $RUN_DIR/evaluations/$EVAL_ID/report.json"
 }
 

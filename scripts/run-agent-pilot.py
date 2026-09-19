@@ -270,8 +270,12 @@ def main() -> None:
             f"Required API key environment variable is not set: {args.api_key_env}"
         )
     environment["SWE_AGENT_CONFIG_ROOT"] = str(sweagent_root)
-    # The server cannot reliably reach raw.githubusercontent.com. LiteLLM ships a
-    # local cost map, so avoid a pointless ~30 second network timeout at startup.
+    # LiteLLM fetches its cost map from raw.githubusercontent.com on import and
+    # silently falls back to the bundled copy when that times out, which this
+    # host does unpredictably. Since SWE-agent aborts on any model it cannot
+    # price, that fallback turns into a total run failure. Pin it to the bundled
+    # copy so pricing never depends on the network, and keep that copy current
+    # with scripts/patch-litellm-cost-map.py.
     environment.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
     command = build_command(args, config_path=config_path, output_dir=output_dir)
