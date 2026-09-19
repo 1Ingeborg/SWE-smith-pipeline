@@ -275,6 +275,21 @@ def validate_task(task: dict[str, Any]) -> None:
             raise ValueError(f"{field} entries must be non-empty strings")
 
 
+def mutation_paths_that_are_test_files(task: dict[str, Any]) -> list[str]:
+    """Return mutated paths that are themselves FAIL_TO_PASS test files.
+
+    A few suites keep their tests inside the modules they exercise (patsy does
+    this throughout). Hiding the F2P test file would then delete the very file
+    the mutation lives in, leaving the Agent nothing to repair, so such tasks
+    are dropped before any image is built.
+    """
+    from swesmith.profiles import registry
+
+    mutated = set(patch_paths(task["patch"]))
+    test_files, _ = registry.get_from_inst(task).get_test_files(task)
+    return sorted(mutated & {safe_repo_path(path) for path in test_files})
+
+
 def load_source_tasks(config: PilotConfig) -> list[dict[str, Any]]:
     tasks = load_jsonl(config.source_dataset)
     seen: set[str] = set()
@@ -295,6 +310,28 @@ def load_source_tasks(config: PilotConfig) -> list[dict[str, Any]]:
             audit = audits.get(task["instance_id"])
             if audit is not None:
                 task["_audit"] = audit
+
+    if config.remove_f2p_tests:
+        kept: list[dict[str, Any]] = []
+        dropped: list[tuple[str, list[str]]] = []
+        for task in tasks:
+            collisions = mutation_paths_that_are_test_files(task)
+            if collisions:
+                dropped.append((task["instance_id"], collisions))
+            else:
+                kept.append(task)
+        if dropped:
+            print(
+                f"Skipping {len(dropped)} tasks whose mutated file is itself a "
+                f"FAIL_TO_PASS test file:"
+            )
+            for instance_id, collisions in dropped[:5]:
+                print(f"  {instance_id}: {', '.join(collisions)}")
+            if len(dropped) > 5:
+                print(f"  ... and {len(dropped) - 5} more")
+        tasks = kept
+        if not tasks:
+            raise ValueError("Every task was dropped by the test-file collision check")
     return tasks
 
 
@@ -371,20 +408,29 @@ def select_balanced_tasks(
     return prepared
 
 
+_STRATEGY_IN_INSTANCE_ID = re.compile(r"\.([A-Za-z_][A-Za-z0-9_]*)__[A-Za-z0-9]+$")
+
+
+def resolved_strategy(task: dict[str, Any]) -> str:
+    """Return the task's mutation strategy, recovering it from the instance id.
+
+    Upstream leaves ``strategy`` null for the ``combine_*`` families, so every
+    combine_file task would otherwise be counted as ``(unknown)`` in the
+    selection summary. The strategy is still unambiguous in the instance id
+    (``<repo>.<hash>.<strategy>__<token>``), so recover it from there.
+    """
+    strategy = task.get("strategy")
+    if strategy is not None:
+        return str(strategy)
+    match = _STRATEGY_IN_INSTANCE_ID.search(str(task.get("instance_id", "")))
+    return match.group(1) if match else "(unknown)"
+
+
 def selection_summary(tasks: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "selected": len(tasks),
         "repositories": dict(sorted(Counter(task["repo"] for task in tasks).items())),
-        "strategies": dict(
-            sorted(
-                Counter(
-                    str(task.get("strategy"))
-                    if task.get("strategy") is not None
-                    else "(unknown)"
-                    for task in tasks
-                ).items()
-            )
-        ),
+        "strategies": dict(sorted(Counter(resolved_strategy(task) for task in tasks).items())),
     }
 
 
