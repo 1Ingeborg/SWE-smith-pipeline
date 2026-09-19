@@ -10,7 +10,7 @@ selection:
 task_images:
   repository: swesmith-lab/rollout-task
   platform: linux/x86_64
-  memory_limit: 10g
+  memory_limit: 4g
   remove_f2p_tests: true
   runtime:
     enabled: true
