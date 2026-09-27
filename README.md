@@ -91,11 +91,13 @@ bash scripts/check-install.sh
 ```text
 确认或拉取镜像
   -> 从镜像 /testbed 恢复仓库源码（不依赖 GitHub clone）
-  -> procedural mutation 生成
-  -> 按 mutation strategy 选择候选
-  -> Docker validation
-  -> 本地导出与多仓库合并
-  -> DeepSeek Flash problem_statement 生成
+  -> procedural mutation 生成单 Bug 候选
+  -> 选择单 Bug 候选
+  -> Docker 验证单 Bug
+  -> combine_file 合并同文件内已验证的单 Bug（满足条件时）
+  -> 选择合成候选
+  -> Docker 验证合成 Bug（存在合成候选时）
+  -> DeepSeek Flash 生成 problem_statement（基于已验证的 single 与可用的 combine）
   -> 规则检查、泄漏审核、事实审核与 accepted/quarantine 分流
 ```
 
