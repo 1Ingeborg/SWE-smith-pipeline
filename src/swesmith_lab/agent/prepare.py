@@ -143,7 +143,7 @@ def load_config(path: Path) -> PilotConfig:
         not isinstance(audit_value, str) or not audit_value.strip()
     ):
         raise ValueError("source.audit must be a path or null")
-    run_root_value = config.get("run_root", "/data/results/agent-pilot-runs")
+    run_root_value = config.get("run_root", "results/agent-pilot-runs")
     if not isinstance(run_root_value, str) or not run_root_value.strip():
         raise ValueError("run_root must be a non-empty path")
 

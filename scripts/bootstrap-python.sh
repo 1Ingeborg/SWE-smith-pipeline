@@ -23,7 +23,7 @@ export PIP_CACHE_DIR="$SWE_LAB_DATA_ROOT/cache/pip"
 
 if [[ ! -f "$SWESMITH_SRC/pyproject.toml" || ! -d "$SWESMITH_SRC/swesmith" ]]; then
   echo "ERROR: bundled SWE-smith source is missing from $SWESMITH_SRC." >&2
-  echo "Clone the complete swe-smith-lab repository first." >&2
+  echo "Clone the complete SWE-smith-pipeline repository first." >&2
   exit 1
 fi
 

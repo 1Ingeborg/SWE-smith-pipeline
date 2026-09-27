@@ -7,7 +7,7 @@
 #   tools/maintenance/launch-run.sh <log-file> <command> [args...]
 #
 # Example:
-#   tools/maintenance/launch-run.sh /data/results/.../logs/00-driver.log \
+#   tools/maintenance/launch-run.sh results/<run-id>/logs/00-driver.log \
 #       bash scripts/run-agent.sh --config configs/rollout/smoke.yaml --stage prepare --dry-run
 
 if [ $# -lt 2 ]; then

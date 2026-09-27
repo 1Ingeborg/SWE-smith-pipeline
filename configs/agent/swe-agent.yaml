@@ -56,7 +56,6 @@ agent:
     - path: tools/submit
     env_variables:
       USE_FILEMAP: 'true'
-      SWE_LAB_EDITOR_PIP_INDEX_URL: https://mirrors.tencentyun.com/pypi/simple
       GIT_PAGER: cat
       PAGER: cat
     enable_bash_tool: true

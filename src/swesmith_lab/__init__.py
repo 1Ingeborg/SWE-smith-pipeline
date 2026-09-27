@@ -1,1 +1,1 @@
-"""SWE-smith Lab implementation helpers."""
+"""SWE-smith Pipeline implementation helpers."""

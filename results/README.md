@@ -24,8 +24,8 @@
   evaluations/mini-swe-agent/<rollout-id>/
 ```
 
-本目录只跟踪此说明文件，所有生成数据由 `.gitignore` 排除。历史结果继续位于
-`/data/results`，已完成的旧布局 run 也不迁移。旧布局仍可读取、续跑。
+本目录只跟踪此说明文件，所有生成数据由 `.gitignore` 排除。已有结果不会自动迁移；
+旧布局仍可读取、续跑。
 新布局的问题描述输入由 single 的完整验证结果和可读、已完成的 combine 验证结果构成；
 combine 不可用时跳过并在 `meta/manifest.json` 的 `issue_input` 中记录原因和数量。
 运行方式见仓库根目录 README。

@@ -75,7 +75,7 @@ def main() -> None:
     parser.add_argument(
         "--python",
         type=Path,
-        default=Path("/data/venvs/sweagent/bin/python"),
+        required=True,
         help="Interpreter whose LiteLLM installation should be patched",
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing entries")

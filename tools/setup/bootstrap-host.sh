@@ -2,7 +2,7 @@
 # Host setup utility; see README for the public workflow.
 set -euo pipefail
 
-DATA_ROOT="${DATA_ROOT:-/data}"
+DATA_ROOT="${DATA_ROOT:?Set DATA_ROOT to the absolute path of a mounted data disk}"
 DOCKER_REGISTRY_MIRROR="${DOCKER_REGISTRY_MIRROR:-}"
 
 if ! mountpoint -q "$DATA_ROOT"; then

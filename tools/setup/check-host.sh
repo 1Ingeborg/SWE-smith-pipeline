@@ -2,7 +2,7 @@
 # Host prerequisite check.
 set -euo pipefail
 
-DATA_ROOT="${DATA_ROOT:-/data}"
+DATA_ROOT="${DATA_ROOT:-${SWE_LAB_DATA_ROOT:-}}"
 failed=0
 
 check() {
@@ -21,10 +21,14 @@ printf 'OS:   %s\n' "$(. /etc/os-release && echo "$PRETTY_NAME")"
 printf 'Arch: %s\n' "$(uname -m)"
 printf 'CPU:  %s vCPU\n' "$(nproc)"
 free -h | sed -n '1,2p'
-df -hT / "$DATA_ROOT" 2>/dev/null || true
+if [[ -n "$DATA_ROOT" ]]; then
+  df -hT / "$DATA_ROOT" 2>/dev/null || true
+fi
 
 check 'x86_64 architecture' test "$(uname -m)" = x86_64
-check "$DATA_ROOT is a mount point" mountpoint -q "$DATA_ROOT"
+if [[ -n "$DATA_ROOT" ]]; then
+  check "$DATA_ROOT is a mount point" mountpoint -q "$DATA_ROOT"
+fi
 check 'at least 8 vCPU' test "$(nproc)" -ge 8
 check 'Git installed' command -v git
 check 'Python 3 installed' command -v python3

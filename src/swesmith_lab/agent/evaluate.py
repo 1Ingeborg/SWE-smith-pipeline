@@ -19,7 +19,7 @@ from typing import Any, Iterable
 
 
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-DEFAULT_OUTPUT_ROOT = Path("/data/results/agent-evaluation-runs")
+DEFAULT_OUTPUT_ROOT = Path(__file__).resolve().parents[3] / "results" / "agent-evaluation-runs"
 COMPLETED_STATUSES = {
     "completed",
     "timeout",
