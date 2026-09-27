@@ -127,23 +127,13 @@ bash scripts/run-task-generation.sh \
   --resume
 ```
 
-新实验每个阶段结束后都会更新 `results/<run-id>/meta/manifest.json`。旧实验仍使用根目录的 `manifest.json`，不会迁移。
-各仓库依次运行，默认 validation workers 为 4；问题描述生成完成后，最终数据位于：
+这个阶段重点查看 `results/<run-id>/` 下的五个文件：
 
-```text
-results/<run-id>/single/candidates/candidates.jsonl
-results/<run-id>/single/candidates/candidates.summary.json
-results/<run-id>/single/validation/accepted.jsonl
-results/<run-id>/single/validation/accepted.summary.json
-results/<run-id>/combine/validation/accepted.jsonl   # 启用且完成 Combine 时
-results/<run-id>/issuegen/accepted.jsonl
-results/<run-id>/issuegen/quarantine.jsonl
-```
-
-`accepted.jsonl` 只收录审核通过且描述非空的任务；Docker 准备失败、
-规则拒绝、审核拒绝或待人工确认的任务进入 `quarantine.jsonl`。
-旧运行目录和其中的配置快照不改动；新模型配置请使用新的 run-id，
-旧 run-id 不会在模型已改变时被静默续跑。
+- `meta/manifest.json`：各阶段进度和数量。
+- `single/validation/accepted.jsonl`：Docker 验证通过的单 Bug。
+- `combine/validation/accepted.jsonl`：Docker 验证通过的合成 Bug；未生成有效合成候选时可能不存在。
+- `issuegen/accepted.jsonl`：问题描述审核通过的任务，供 Agent 使用。
+- `issuegen/quarantine.jsonl`：未通过审核或需要人工检查的任务。
 
 Agent 之前先跑单仓库完整冒烟（15 个候选上限、Docker 验证、DeepSeek
 Flash 问题描述及审核；不自动启动 Agent）：
