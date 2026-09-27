@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# [PATCHED for swe-smith-lab]
+# [PATCHED for SWE-smith pipeline]
 #
 # 原版：
 #   pip install 'tree-sitter==0.21.3'
@@ -26,9 +26,4 @@ if [ ! -x "$PY/pip3" ]; then
     exit 1
 fi
 
-"$PY/pip3" install 'tree-sitter==0.21.3' \
-    -i https://mirrors.tencentyun.com/pypi/simple \
-    --trusted-host mirrors.tencentyun.com
-"$PY/pip3" install 'tree-sitter-languages' \
-    -i https://mirrors.tencentyun.com/pypi/simple \
-    --trusted-host mirrors.tencentyun.com
+"$PY/pip3" install 'tree-sitter==0.21.3' 'tree-sitter-languages'

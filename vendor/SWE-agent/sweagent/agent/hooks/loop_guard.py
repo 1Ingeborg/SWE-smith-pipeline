@@ -7,7 +7,7 @@ spends every remaining call re-running that one command and never edits a file,
 so the instance finishes with an empty patch.
 
 This mirrors the guard already protecting the mini-SWE-agent path
-(``LFCompatibleLitellmModel`` under ``/data/configs/mini-sweagent``), including
+(``LFCompatibleLitellmModel`` in the earlier experiment configuration), including
 the window size, the duplicate threshold and the warning text, so the two
 harnesses stay comparable.
 """
