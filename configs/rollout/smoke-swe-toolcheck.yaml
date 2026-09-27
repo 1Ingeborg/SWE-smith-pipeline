@@ -15,11 +15,14 @@ gold:
 experiments:
   swe-agent:
     rollout_id: deepseek-flash-t0-toolcheck-mirror  # 保留首次安装超时日志
-    native_config: configs/agent/deepseek-flash-smith.yaml
+    native_config: configs/agent/swe-agent.yaml
     model_name: deepseek/deepseek-flash
     api_base: https://api.deepseek.com
     api_key_env: DEEPSEEK_API_KEY
     temperature: 0
+    completion_kwargs:
+      thinking:
+        type: disabled
     workers: 1
     max_instances: 1  # 只用第一题验证工具安装与模型调用
     per_instance_call_limit: 30

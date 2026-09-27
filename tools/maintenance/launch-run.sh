@@ -8,7 +8,7 @@
 #
 # Example:
 #   tools/maintenance/launch-run.sh /data/results/.../logs/00-driver.log \
-#       ./tools/legacy/run-agent-rollout.sh --config configs/rollout/x.conf all
+#       bash scripts/run-agent.sh --config configs/rollout/smoke.yaml --stage prepare --dry-run
 
 if [ $# -lt 2 ]; then
     echo "usage: $0 <log-file> <command> [args...]" >&2

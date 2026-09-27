@@ -20,16 +20,6 @@ import yaml
 LAB_ROOT = Path(__file__).resolve().parents[3]
 RESULTS_ROOT = LAB_ROOT / "results"
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-LEGACY_OPTIONS = {
-    "--run-dir", "--framework", "--rollout-id", "--prepare-config",
-    "--agent-config", "--mini-config", "--model-name", "--api-base",
-    "--api-key-env", "--workers", "--eval-workers", "--per-instance-call-limit",
-    "--per-instance-cost-limit", "--total-cost-limit", "--eval-memory-limit",
-    "--eval-timeout-seconds", "--sweagent-root", "--sweagent-executable",
-    "--mini-executable",
-}
-
-
 def data_root() -> Path:
     value = os.environ.get("SWE_LAB_DATA_ROOT")
     if not value and (LAB_ROOT / ".env").is_file():
@@ -43,54 +33,21 @@ def data_root() -> Path:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, help="Rollout experiment YAML (new config-driven mode).")
+    parser.add_argument("--config", type=Path, required=True, help="Rollout experiment YAML.")
     parser.add_argument("--experiment", help="Select exactly one framework from --config.")
-    parser.add_argument("--run-dir", type=Path)
-    parser.add_argument("--framework", choices=("swe-agent", "mini-swe-agent"))
-    parser.add_argument("--rollout-id")
     parser.add_argument("--stage", choices=("prepare", "gold", "agent", "rollout", "eval", "sft"))
-    parser.add_argument("--prepare-config", type=Path, default=Path("configs/rollout/shared-tasks.yaml"))
-    parser.add_argument("--agent-config", type=Path, default=Path("configs/agent/deepseek-flash.yaml"))
-    parser.add_argument("--mini-config", type=Path, default=Path("configs/agent/mini-swe-agent-deepseek-flash.yaml"))
-    parser.add_argument("--model-name", default="deepseek/deepseek-flash")
-    parser.add_argument("--api-base", default="https://api.deepseek.com")
-    parser.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
-    parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--eval-workers", type=int, default=2)
-    parser.add_argument("--per-instance-call-limit", type=int, default=30)
-    parser.add_argument("--per-instance-cost-limit", type=float, default=2.0)
-    parser.add_argument("--total-cost-limit", type=float, default=12.0)
-    parser.add_argument("--eval-memory-limit", default="4g")
-    parser.add_argument("--eval-timeout-seconds", type=int, default=120)
-    parser.add_argument("--sweagent-root", type=Path)
-    parser.add_argument("--sweagent-executable", type=Path)
-    parser.add_argument("--mini-executable", type=Path)
     parser.add_argument("--allow-api-calls", action="store_true")
     parser.add_argument("--with-gold", action="store_true", help="Include the optional gold check in the full Agent flow.")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
-    tokens = argv if argv is not None else sys.argv[1:]
-    if args.config:
-        args.stage = args.stage or "agent"
-        mixed = sorted({token.split("=", 1)[0] for token in tokens} & LEGACY_OPTIONS)
-        if mixed:
-            parser.error(f"--config cannot be combined with legacy options: {', '.join(mixed)}")
-        if args.stage in {"agent", "rollout", "eval", "sft"} and not args.experiment:
-            parser.error("--experiment is required for agent/rollout/eval/sft with --config")
-        if args.stage in {"prepare", "gold"} and args.experiment:
-            parser.error("--experiment is not used for prepare/gold")
-        if args.with_gold and args.stage != "agent":
-            parser.error("--with-gold is only valid for the full agent stage")
-    else:
-        if args.stage is None:
-            parser.error("legacy mode requires --stage")
-        if args.experiment:
-            parser.error("--experiment requires --config")
-        if args.stage in {"gold", "rollout", "sft"} or args.with_gold:
-            parser.error("gold/rollout/sft and --with-gold require --config")
-        if not (args.run_dir and args.framework and args.rollout_id):
-            parser.error("legacy mode requires --run-dir, --framework and --rollout-id")
+    args.stage = args.stage or "agent"
+    if args.stage in {"agent", "rollout", "eval", "sft"} and not args.experiment:
+        parser.error("--experiment is required for agent/rollout/eval/sft")
+    if args.stage in {"prepare", "gold"} and args.experiment:
+        parser.error("--experiment is not used for prepare/gold")
+    if args.with_gold and args.stage != "agent":
+        parser.error("--with-gold is only valid for the full agent stage")
     return args
 
 
@@ -169,12 +126,14 @@ def load_rollout_config(path: Path) -> dict:
             raise ValueError(f"Invalid rollout_id for {experiment_id}: {rollout_id!r}")
         if experiment_id == "swe-agent":
             _keys(item, common | {"per_instance_call_limit", "per_instance_cost_limit",
-                                  "total_cost_limit", "max_instances"}, experiment_id)
+                                  "total_cost_limit", "max_instances", "completion_kwargs"}, experiment_id)
             _positive_int(item, "per_instance_call_limit", experiment_id)
             _nonnegative_number(item, "per_instance_cost_limit", experiment_id)
             _nonnegative_number(item, "total_cost_limit", experiment_id)
             if "max_instances" in item:
                 _positive_int(item, "max_instances", experiment_id)
+            if "completion_kwargs" in item:
+                _mapping(item["completion_kwargs"], f"{experiment_id}.completion_kwargs")
         else:
             _keys(item, common | {"step_limit", "cost_limit", "max_output_tokens"}, experiment_id)
             _positive_int(item, "step_limit", experiment_id)
@@ -208,18 +167,25 @@ def _redact(value: object) -> object:
     return value
 
 
+def swe_model_overrides(item: dict) -> dict:
+    model = {
+        "name": item["model_name"], "api_base": item["api_base"],
+        "temperature": item["temperature"],
+        "per_instance_call_limit": item["per_instance_call_limit"],
+        "per_instance_cost_limit": item["per_instance_cost_limit"],
+        "total_cost_limit": item["total_cost_limit"],
+    }
+    if "completion_kwargs" in item:
+        model["completion_kwargs"] = copy.deepcopy(item["completion_kwargs"])
+    return model
+
+
 def effective_native_config(framework: str, item: dict, path: Path) -> dict:
     native = _mapping(yaml.safe_load(path.read_text(encoding="utf-8")), "framework-native config")
     effective = copy.deepcopy(native)
     if framework == "swe-agent":
         model = effective.setdefault("agent", {}).setdefault("model", {})
-        model.update({
-            "name": item["model_name"], "api_base": item["api_base"],
-            "temperature": item["temperature"],
-            "per_instance_call_limit": item["per_instance_call_limit"],
-            "per_instance_cost_limit": item["per_instance_cost_limit"],
-            "total_cost_limit": item["total_cost_limit"],
-        })
+        model.update(swe_model_overrides(item))
     else:
         effective.setdefault("agent", {}).update({
             "step_limit": item["step_limit"], "cost_limit": item["cost_limit"],
@@ -271,9 +237,13 @@ def lab_bundle_digests(native_path: Path) -> dict[str, str]:
     return digests
 
 
-def resolved_sweagent_config(native_path: Path, destination: Path, *, dry_run: bool) -> Path:
+def resolved_sweagent_config(native_path: Path, destination: Path, *, dry_run: bool,
+                             model_overrides: dict | None = None) -> Path:
     native = _mapping(yaml.safe_load(native_path.read_text(encoding="utf-8")), "SWE-agent native config")
     changed = False
+    if model_overrides is not None:
+        native.setdefault("agent", {}).setdefault("model", {}).update(copy.deepcopy(model_overrides))
+        changed = True
     for bundle in native.get("agent", {}).get("tools", {}).get("bundles", []):
         value = bundle.get("path")
         if isinstance(value, str) and value.startswith("lab:"):
@@ -296,6 +266,10 @@ def configured_args(cli: argparse.Namespace) -> tuple[argparse.Namespace, Path, 
     values = argparse.Namespace(**vars(cli))
     values.run_dir = run_dir
     values.prepare_config = Path(config["prepare"]["template"])
+    values.workers = 1
+    values.eval_workers = 2
+    values.eval_memory_limit = "4g"
+    values.eval_timeout_seconds = 120
     values.sweagent_root = None
     values.sweagent_executable = None
     values.mini_executable = None
@@ -304,6 +278,7 @@ def configured_args(cli: argparse.Namespace) -> tuple[argparse.Namespace, Path, 
     values.mini_max_tokens = None
     values.max_instances = None
     values.temperature = None
+    values.swe_model_overrides = None
     snapshot = {"schema_version": 1, "run_dir": config["run_dir"]}
     if cli.stage == "prepare":
         template = require_file(resolve_input(values.prepare_config), "Task preparation template")
@@ -346,6 +321,7 @@ def configured_args(cli: argparse.Namespace) -> tuple[argparse.Namespace, Path, 
             values.per_instance_cost_limit = item["per_instance_cost_limit"]
             values.total_cost_limit = item["total_cost_limit"]
             values.max_instances = item.get("max_instances")
+            values.swe_model_overrides = swe_model_overrides(item)
         else:
             values.mini_step_limit = item["step_limit"]
             values.mini_cost_limit = item["cost_limit"]
@@ -591,6 +567,7 @@ def build_command(args: argparse.Namespace, run_dir: Path) -> tuple[list[str], d
             require_file(resolve_input(args.agent_config), "SWE-agent native config"),
             run_dir / "meta" / "rollout-configs" / f"native-swe-agent-{args.rollout_id}.yaml",
             dry_run=args.dry_run,
+            model_overrides=getattr(args, "swe_model_overrides", None),
         )
         command = [python, str(LAB_ROOT / "src/swesmith_lab/agent/run.py"),
                    "--instances", str(instances), "--run-id", args.rollout_id,
@@ -644,14 +621,8 @@ def ensure_prepared(cli: argparse.Namespace, args: argparse.Namespace, run_dir: 
     prepare_cli = argparse.Namespace(**vars(cli))
     prepare_cli.stage = "prepare"
     prepare_cli.experiment = None
-    if cli.config:
-        prepare_args, _, snapshot_path, snapshot_text = configured_args(prepare_cli)
-        check_snapshot(snapshot_path, snapshot_text)
-    else:
-        prepare_args = argparse.Namespace(**vars(args))
-        prepare_args.stage = "prepare"
-        snapshot_path = None
-        snapshot_text = None
+    prepare_args, _, snapshot_path, snapshot_text = configured_args(prepare_cli)
+    check_snapshot(snapshot_path, snapshot_text)
 
     if args.dry_run:
         if preparation_complete(run_dir, verify_images=False):
@@ -675,8 +646,7 @@ def ensure_prepared(cli: argparse.Namespace, args: argparse.Namespace, run_dir: 
         prepare_args.resume = metadata.is_file()
         command, _ = build_command(prepare_args, run_dir)
         print("Task preparation is missing or incomplete; running prepare before Agent.", flush=True)
-        if snapshot_path is not None:
-            save_snapshot(snapshot_path, snapshot_text)
+        save_snapshot(snapshot_path, snapshot_text)
         subprocess.run(command, cwd=LAB_ROOT, check=True)
         if not preparation_complete(run_dir, verify_images=True):
             raise RuntimeError("Task preparation did not complete; Agent API calls were not started")
@@ -863,22 +833,16 @@ def run_configured_agent(cli: argparse.Namespace, args: argparse.Namespace, run_
 
 def main(argv: list[str] | None = None) -> None:
     cli = parse_args(argv)
-    args = cli
-    snapshot_path = None
-    snapshot_text = None
-    if args.config:
-        args, run_dir, snapshot_path, snapshot_text = configured_args(args)
-        check_snapshot(snapshot_path, snapshot_text)
-    else:
-        run_dir = resolve_run_dir(args.run_dir)
+    args, run_dir, snapshot_path, snapshot_text = configured_args(cli)
+    check_snapshot(snapshot_path, snapshot_text)
     if args.workers < 1 or args.eval_workers < 1:
         raise ValueError("Worker counts must be positive")
     if args.eval_timeout_seconds < 1:
         raise ValueError("Evaluation timeout must be positive")
-    if cli.config and args.stage == "agent":
+    if args.stage == "agent":
         run_configured_agent(cli, args, run_dir, snapshot_path, snapshot_text)
         return
-    if cli.config and args.stage == "rollout":
+    if args.stage == "rollout":
         prepared = preparation_complete(run_dir, verify_images=not args.dry_run)
         ids = expected_ids(run_dir, max_instances=getattr(args, "max_instances", None)) if prepared else []
         rollout, _ = output_paths(run_dir, args.framework, args.rollout_id)
@@ -893,9 +857,7 @@ def main(argv: list[str] | None = None) -> None:
             api_environment(args.api_key_env)
         if not ensure_prepared(cli, args, run_dir, check_api=False, check_rollout=False):
             return
-    elif args.stage == "agent" and not ensure_prepared(cli, args, run_dir):
-        return
-    if cli.config and args.stage in {"eval", "gold", "sft"} and not args.dry_run:
+    if args.stage in {"eval", "gold", "sft"} and not args.dry_run:
         if args.stage == "gold":
             _, _, selected = preparation_paths(run_dir)
             rows = [json.loads(line) for line in require_file(selected, "Prepared private selection")
@@ -917,7 +879,7 @@ def main(argv: list[str] | None = None) -> None:
         elif destination.is_dir() and any(destination.iterdir()):
             raise RuntimeError(f"Incomplete SFT output needs inspection; refusing to overwrite: {destination}")
     command, environment = build_command(args, run_dir)
-    if cli.config and args.stage in {"eval", "gold"}:
+    if args.stage in {"eval", "gold"}:
         command.append("--require-all")
         if args.stage == "eval" and getattr(args, "max_instances", None) is not None:
             for iid in expected_ids(run_dir, max_instances=args.max_instances):
@@ -935,8 +897,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.dry_run:
         print("Dry run: no files, Docker images, or API calls were created.")
         return
-    if snapshot_path is not None:
-        save_snapshot(snapshot_path, snapshot_text)
+    save_snapshot(snapshot_path, snapshot_text)
     subprocess.run(command, cwd=LAB_ROOT, env=environment, check=True)
 
 

@@ -22,8 +22,6 @@ import yaml
 SCRIPT_DIR = Path(__file__).resolve().parent
 LAB_REPO = SCRIPT_DIR.parent
 PIPELINE_DIR = LAB_REPO / "src" / "swesmith_lab" / "pipeline"
-ISSUEGEN_DIR = LAB_REPO / "src" / "swesmith_lab" / "issuegen"
-DEFAULT_CONFIG = LAB_REPO / "configs" / "task_generation" / "multirepo-procedural.yaml"
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -92,7 +90,7 @@ def run_paths(run_dir: Path) -> RunPaths:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument(
         "--resume",
@@ -492,8 +490,8 @@ def load_config(path: Path) -> tuple[dict[str, Any], list[RepoPlan]]:
     if config.get("schema_version") != 1:
         raise ValueError("schema_version must be 1")
     issue = require_mapping(config.get("issue_generation", {}), "issue_generation")
-    if issue.get("enabled", True) and issue.get("backend", "official") not in {"official", "deepseek_reviewed"}:
-        raise ValueError("issue_generation.backend must be official or deepseek_reviewed")
+    if issue.get("enabled", True) and issue.get("backend", "deepseek_reviewed") != "deepseek_reviewed":
+        raise ValueError("issue_generation.backend must be deepseek_reviewed")
 
     generation = require_mapping(config.get("generation", {}), "generation")
     defaults = {
@@ -1178,9 +1176,6 @@ def main() -> None:
     swesmith_python = resolve_path(
         paths.get("swesmith_python", data_root / "venvs" / "swesmith-lab-core" / "bin" / "python")
     )
-    issuegen_python = resolve_path(
-        paths.get("issuegen_python", data_root / "venvs" / "swesmith-lab-llm" / "bin" / "python")
-    )
     llm_python = resolve_path(
         paths.get("llm_python", data_root / "venvs" / "swesmith-lab-llm" / "bin" / "python")
     )
@@ -1676,43 +1671,20 @@ def main() -> None:
                     mutation_workspace / "logs" / "run_validation",
                     layout.combine_workspace / "logs" / "run_validation",
                 )
-            backend = issue.get("backend", "official")
-            if backend == "deepseek_reviewed":
-                production = [
-                    str(swesmith_python),
-                    str(SCRIPT_DIR / "run-reviewed-issuegen.py"),
-                    str(issue_input),
-                    "--run-id", "issuegen",
-                    "--run-root", str(run_dir),
-                    "--validation-dir", str(issue_validation_dir),
-                    "--python", str(swesmith_python),
-                    "--workers", str(positive_int(issue.get("workers", 2), "issue_generation.workers")),
-                    "--max-output-tokens", str(positive_int(issue.get("max_output_tokens", 800), "issue_generation.max_output_tokens")),
-                    "--max-failing-tests", str(positive_int(issue.get("max_failing_tests", 3), "issue_generation.max_failing_tests")),
-                    "--max-rewrites", str(whole_int(issue.get("max_rewrites", 1), "issue_generation.max_rewrites")),
-                ]
-            elif backend == "official":
-                if not issuegen_python.exists():
-                    raise FileNotFoundError(issuegen_python)
-                issue_config = resolve_path(issue.get("config", "configs/issue_gen/ig_v2_deepseek.yaml"))
-                demo_pool = resolve_path(issue.get("demo_pool", data_root / "datasets" / "swe-smith-lab" / "demo-problem-statements.json"))
-                production = [
-                    str(swesmith_python), str(ISSUEGEN_DIR / "official.py"), str(issue_input),
-                    "--run-id", "issuegen", "--run-root", str(run_dir),
-                    "--config", str(issue_config), "--demo-pool", str(demo_pool),
-                    "--demo-seed", str(positive_int(issue.get("demo_seed", 42), "issue_generation.demo_seed")),
-                    "--workers", str(positive_int(issue.get("workers", 4), "issue_generation.workers")),
-                    "--audit-policy", str(issue.get("audit_policy", "balanced")),
-                    "--validation-dir", str(issue_validation_dir),
-                    "--issuegen-repo", str(swesmith_repo), "--issuegen-python", str(issuegen_python),
-                    "--audit-python", str(swesmith_python),
-                ]
-                if issue.get("review_ambiguous", False):
-                    production.append("--review-ambiguous")
-                if issue.get("check_reproduction", False):
-                    production.append("--check-reproduction")
-            else:
-                raise ValueError(f"Unknown issue_generation.backend: {backend}")
+            backend = issue.get("backend", "deepseek_reviewed")
+            production = [
+                str(swesmith_python),
+                str(SCRIPT_DIR / "run-reviewed-issuegen.py"),
+                str(issue_input),
+                "--run-id", "issuegen",
+                "--run-root", str(run_dir),
+                "--validation-dir", str(issue_validation_dir),
+                "--python", str(swesmith_python),
+                "--workers", str(positive_int(issue.get("workers", 2), "issue_generation.workers")),
+                "--max-output-tokens", str(positive_int(issue.get("max_output_tokens", 800), "issue_generation.max_output_tokens")),
+                "--max-failing-tests", str(positive_int(issue.get("max_failing_tests", 3), "issue_generation.max_failing_tests")),
+                "--max-rewrites", str(whole_int(issue.get("max_rewrites", 1), "issue_generation.max_rewrites")),
+            ]
             if (run_dir / "issuegen" / "manifest.json").exists():
                 production.append("--resume")
             run_command(

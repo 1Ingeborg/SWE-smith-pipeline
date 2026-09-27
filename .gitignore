@@ -19,12 +19,6 @@ __pycache__/
 
 # Generated SWE data
 /logs/
-datasets/*
-!datasets/README.md
-runs/*
-!runs/README.md
-reports/*
-!reports/README.md
 /artifacts/
 results/*
 !results/README.md
@@ -35,6 +29,23 @@ results/*
 /models/
 /checkpoints/
 /cache/
+
+# Local-only experiment data and supporting material
+/datasets/
+/docs/
+/patches/
+/reports/
+/runs/
+/tests/
+/workflows/
+
+# Superseded local-only entry points and presets
+/configs/legacy/
+/configs/task_generation/multirepo-*.yaml
+/configs/rollout/agent-pilot.yaml
+/configs/rollout/deepseek-agent-741.*
+/tools/legacy/
+/tools/setup/link-legacy-paths.sh
 
 # Local dependencies and generated workflow state
 *.egg-info/

@@ -22,7 +22,6 @@ import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LAB_REPO = Path(__file__).resolve().parents[3]
-DEFAULT_CONFIG = LAB_REPO / "configs" / "rollout" / "agent-pilot.yaml"
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 IMAGE_REPOSITORY_PATTERN = re.compile(
     r"^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*[a-z0-9]+(?:[._-][a-z0-9]+)*$"
@@ -68,7 +67,7 @@ class PilotConfig:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument(
         "--resume",

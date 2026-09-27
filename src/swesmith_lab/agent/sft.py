@@ -64,7 +64,7 @@ def export_swe(rollout_dir: Path, eval_dir: Path, ids: list[str]) -> list[dict]:
 
 def export_mini(rollout_dir: Path, eval_dir: Path, instances: Path,
                 native_config: Path, model: str, work_dir: Path) -> list[dict]:
-    converter = LAB_ROOT / "workflows/mini-sweagent/convert_mini_trajs_to_sft.py"
+    converter = LAB_ROOT / "src/swesmith_lab/agent/mini_sft_converter.py"
     subprocess.run([sys.executable, str(converter), "--traj-dir", str(rollout_dir),
                     "--eval-dir", str(eval_dir), "--instances", str(instances),
                     "--agent-config", str(native_config), "--out-dir", str(work_dir),

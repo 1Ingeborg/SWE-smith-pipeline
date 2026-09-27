@@ -15,7 +15,7 @@ gold:
 experiments:
   mini-swe-agent:  # 启动时显式选择这个框架；不会自动运行另一框架
     rollout_id: deepseek-flash  # 同一批题目下区分模型与温度的结果 ID
-    native_config: configs/agent/mini-swe-agent-deepseek-flash.yaml  # 框架原生配置集中放在 configs/agent
+    native_config: configs/agent/mini-swe-agent.yaml  # 框架原生配置集中放在 configs/agent
     model_name: deepseek/deepseek-flash
     api_base: https://api.deepseek.com
     api_key_env: DEEPSEEK_API_KEY  # 仅写变量名，密钥留在未提交的 .env
@@ -31,11 +31,14 @@ experiments:
 
   swe-agent:  # 启动时显式选择这个框架；不会自动运行另一框架
     rollout_id: deepseek-flash  # 新实验 ID；保留旧的安装失败结果
-    native_config: configs/agent/deepseek-flash-smith.yaml  # 本批任务使用仓库自带的编辑工具
+    native_config: configs/agent/swe-agent.yaml  # 本批任务使用仓库自带的编辑工具
     model_name: deepseek/deepseek-flash
     api_base: https://api.deepseek.com
     api_key_env: DEEPSEEK_API_KEY
     temperature: 0  # 显式设置，与 mini 实验一致
+    completion_kwargs:  # DeepSeek 专属请求参数；其他模型按需删除
+      thinking:
+        type: disabled
     workers: 1  # 同时运行的题目数
     per_instance_call_limit: 30  # 每题模型调用次数上限
     per_instance_cost_limit: 2.0  # 每题美元费用上限

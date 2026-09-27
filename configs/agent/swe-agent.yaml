@@ -52,20 +52,13 @@ agent:
     execution_timeout: 300
     bundles:
     - path: tools/registry
-    - path: tools/edit_anthropic
+    - path: lab:tools/agent/edit_anthropic
     - path: tools/submit
     env_variables:
       USE_FILEMAP: 'true'
+      SWE_LAB_EDITOR_PIP_INDEX_URL: https://mirrors.tencentyun.com/pypi/simple
       GIT_PAGER: cat
       PAGER: cat
     enable_bash_tool: true
     parse_function:
       type: function_calling
-  model:
-    name: deepseek/deepseek-flash
-    api_base: https://api.deepseek.com
-    per_instance_cost_limit: 2.0
-    per_instance_call_limit: 30
-    completion_kwargs:
-      thinking:
-        type: disabled

@@ -23,7 +23,7 @@ AutoDL GPU
 
 - Ubuntu 22.04 LTS
 - Python 3.10
-- 内置 SWE-smith 源码：官方提交 `9b74ac08118a85c39c356802f7961893af73e07f`，加上 [`patches/SWE-smith/`](patches/SWE-smith/README.md) 中记录的本地改动。此前实验记录的基线为 `ad37c380ec8c7b775cdb11a074e408f90c874dad`；新快照并不自动等同于旧实验环境。
+- 内置 SWE-smith 源码：官方提交 `9b74ac08118a85c39c356802f7961893af73e07f`，加上已应用到 `vendor/SWE-smith/` 的本地改动。补丁原件仅在本机 `patches/` 留存，不上传 GitHub。此前实验记录的基线为 `ad37c380ec8c7b775cdb11a074e408f90c874dad`；新快照并不自动等同于旧实验环境。
 - SWE-bench: `4.1.0`
 - SWE-agent: `v1.1.0`（独立 Python 3.11 环境）
 - mini-swe-agent: `v2.4.6`（独立 Python 3.10+ 环境）
@@ -33,7 +33,7 @@ SWE-smith 当前提交仍使用 `swebench.harness.constants.DOCKER_USER`。该�
 
 ## 新服务器恢复
 
-跨服务器环境清单与源码、镜像、数据的边界见 [新服务器环境配置](docs/new-server-setup.md)。下面的 `/data` 和宿主机初始化脚本是当前腾讯云机器的示例；其他机器可将仓库和 `SWE_LAB_DATA_ROOT` 放在适合自己的位置。
+下面的 `/data` 和宿主机初始化脚本是当前腾讯云机器的示例；其他机器可将仓库和 `SWE_LAB_DATA_ROOT` 放在适合自己的位置。更详细的环境说明仅在本机 `docs/` 留存，不上传 GitHub。
 
 先将数据盘挂载到 `/data`，然后安装 Git 并克隆本仓库：
 
@@ -69,7 +69,7 @@ bash scripts/bootstrap-python.sh
 
 该脚本新建 `$SWE_LAB_DATA_ROOT/venvs/swesmith-lab-core` 与
 `$SWE_LAB_DATA_ROOT/venvs/swesmith-lab-llm`，不覆盖旧 venv。前者负责程序化
-生成、验证及 DeepSeek 三重审核；后者为可选 LiteLLM 策略和官方 issuegen
+生成、验证及 DeepSeek 三重审核；后者供可选 LiteLLM Bug 生成策略使用，
 隔离依赖。未设置数据根目录时默认使用仓库内忽略 Git 的 `.local/`。
 环境变量优先于 `.env`；运行日志和 manifest 不保存 API 密钥。
 
@@ -97,10 +97,8 @@ bash scripts/check-install.sh
 /data/cache/pip             pip 缓存
 ```
 
-近期 mini-swe-agent、SWE-bench Verified 50 和评测脚本已归入
-[`workflows/`](workflows/README.md)。`/data/configs` 下保留兼容软链接，
-涉及 `/data/configs` 的旧命令暂时不需要改路径；新服务器上可运行
-`bash tools/setup/link-legacy-paths.sh` 建立这些链接。新的生成、验证配置直接指向
+旧 mini-swe-agent、SWE-bench Verified 50 和评测脚本仍在本机 `workflows/` 留存，
+但已排除 Git，不属于新服务器上的入口。新的生成、验证配置直接指向
 `vendor/SWE-smith`，不需要 `/data/repos/SWE-smith` 兼容链接。
 新实验结果位于仓库的 `results/<run-id>/`；生成数据被 Git 忽略，不提交。
 历史 `/data/results` 保留原位置，不自动迁移。
@@ -109,20 +107,18 @@ bash scripts/check-install.sh
 
 - `scripts/` 只放日常入口：Python 环境安装与检查、多仓库任务生成及其便携启动脚本、单独的 DeepSeek 题目描述生成、Agent 运行。
 - `src/swesmith_lab/pipeline/` 放候选选择、导出、合并与验证等内部步骤。
-- `src/swesmith_lab/issuegen/` 放生成、审核及可选的官方 issuegen 后端。
+- `src/swesmith_lab/issuegen/` 放当前 DeepSeek 问题描述生成与审核代码。
 - `src/swesmith_lab/agent/` 放任务准备、SWE-agent 调用和评测。
-- `tools/setup/`、`tools/maintenance/`、`tools/legacy/` 分别放宿主机安装、低频维护与历史实验脚本。
+- `tools/setup/`、`tools/maintenance/` 分别放宿主机安装与低频维护脚本。
 
 从仓库根目录执行文档中的命令。内部脚本可直接通过其新路径执行；不要再使用旧的 `scripts/<内部步骤>.py` 路径。
-旧路径与新路径的完整对照见 [脚本迁移表](docs/script-layout.md)。
+旧路径与新路径的完整对照仅在本机 `docs/script-layout.md` 留存。
 
-运行预设按环节放在 `configs/task_generation/`（Agent 前的任务生成）、
-`configs/rollout/`（Agent 运行）和 `configs/issue_gen/`（独立题目描述生成）。
+运行预设按环节放在 `configs/task_generation/`（Agent 前的任务生成）和
+`configs/rollout/`（Agent 运行）；问题描述生成由任务生成配置的 `issue_generation` 段控制。
 `configs/task_generation/full.yaml` 是当前的 40 仓库程序化生产预设；
-`multirepo-procedural.yaml` 用于较小规模的多仓库运行，
-`multirepo-all-strategies.yaml` 用于可选策略实验，
-`smoke.yaml` 用于 Agent 前的单仓库全流程冒烟测试（包括 DeepSeek 问题描述与审核）；
-早期单仓库的 `pilot.conf` 只作为历史实验记录，不属于当前预设。
+`smoke.yaml` 用于 Agent 前的小规模全流程冒烟测试（包括 DeepSeek 问题描述与审核）。
+启动时必须显式传 `--config`，不会默认选择生产规模。
 
 ## 首轮实验
 
@@ -135,10 +131,9 @@ bash scripts/check-install.sh
 人工检查有效与无效样本
 ```
 
-执行前阅读 [首轮实验说明](docs/first-experiment.md)，本次实测记录见 [首轮实验结果](docs/pilot-results.md)。
+首轮实验说明与结果仅在本机 `docs/` 留存，不上传 GitHub。
 
-历史模型对比见 [Qwen 模型对比](docs/issue-model-comparison.md)，
-批量生成与自动审核方案见 [problem statement 质量控制](docs/problem-statement-quality-control.md)。
+历史模型对比及 problem statement 质量控制记录也仅在本机 `docs/` 留存。
 
 ## 多仓库任务生成
 
@@ -161,8 +156,8 @@ bash scripts/check-install.sh
 ```bash
 cd /data/repos/swe-smith-lab
 bash scripts/run-task-generation.sh \
-  --config configs/task_generation/multirepo-procedural.yaml \
-  --run-id multirepo-smoke-001 \
+  --config configs/task_generation/smoke.yaml \
+  --run-id smoke-plan-001 \
   --dry-run
 ```
 
@@ -171,8 +166,8 @@ bash scripts/run-task-generation.sh \
 ```bash
 cd /data/repos/swe-smith-lab
 bash scripts/run-task-generation.sh \
-  --config configs/task_generation/multirepo-procedural.yaml \
-  --run-id multirepo-20260914-001
+  --config configs/task_generation/smoke.yaml \
+  --run-id smoke-example-001
 ```
 
 如果 SSH、服务器或进程中断，使用完全相同的配置和 `run-id` 续跑：
@@ -180,8 +175,8 @@ bash scripts/run-task-generation.sh \
 ```bash
 cd /data/repos/swe-smith-lab
 bash scripts/run-task-generation.sh \
-  --config configs/task_generation/multirepo-procedural.yaml \
-  --run-id multirepo-20260914-001 \
+  --config configs/task_generation/smoke.yaml \
+  --run-id smoke-example-001 \
   --resume
 ```
 
@@ -240,7 +235,7 @@ bash scripts/run-task-generation.sh \
 
 ## 本地 Agent 修复与评测
 
-本仓库可以把 `accepted.jsonl` 转成防直接泄漏的本地 Agent 任务镜像，运行固定版本 SWE-agent 或 mini-swe-agent，并用私有 F2P/P2P 真值评分。三个上游项目的源码均已内置于 `vendor/`，版本与许可证见 [`vendor/README.md`](vendor/README.md)；SWE-smith 兼容改动记录在 [`patches/SWE-smith/`](patches/SWE-smith/README.md)。本地任务不依赖 Hugging Face 数据，也不要求将每条任务分支推送到 GitHub。
+本仓库可以把 `accepted.jsonl` 转成防直接泄漏的本地 Agent 任务镜像，运行固定版本 SWE-agent 或 mini-swe-agent，并用私有 F2P/P2P 真值评分。三个上游项目的源码均已内置于 `vendor/`，版本与许可证见 [`vendor/README.md`](vendor/README.md)；SWE-smith 兼容改动已包含在内置源码中，补丁原件仅在本机留存。本地任务不依赖 Hugging Face 数据，也不要求将每条任务分支推送到 GitHub。
 
 ```text
 accepted.jsonl
@@ -263,22 +258,10 @@ bash scripts/check-install.sh
 
 入口会把环境装在 `SWE_LAB_DATA_ROOT/venvs/`（未设置时为仓库内 `.local/venvs/`），无需提交虚拟环境。mini-swe-agent 要求 Python 3.10+；若系统 `python3` 不符合要求，可在安装前设置 `MINI_SWE_AGENT_PYTHON`。Docker 镜像也不存 Git：宿主机需能运行 Docker，按任务生成配置准备基础镜像，再由 `run-agent.sh` 的 `prepare` 阶段构建每题任务镜像。镜像名称随配置和任务变化，不能靠复制两个 Agent 源码获得。安装脚本只准备 Python 环境，不触发模型 API 调用或构建任务镜像。
 
-然后构建 pilot 并执行零费用冒烟：
+新实验统一使用下方的 `run-agent.sh` 配置入口；它必须显式指定 rollout YAML。
+`--dry-run` 不调用模型 API；实际启动 Agent 必须加 `--allow-api-calls`，并受到调用次数与费用上限保护。
 
-```bash
-/data/venvs/swesmith-lab-core/bin/python src/swesmith_lab/agent/prepare.py \
-  --config configs/rollout/agent-pilot.yaml \
-  --run-id agent-pilot-example
-
-/data/venvs/swesmith-lab-core/bin/python src/swesmith_lab/agent/run.py \
-  --instances /data/results/agent-pilot-runs/agent-pilot-example/public/instances.jsonl \
-  --run-id agent-smoke-example \
-  --workers 1
-```
-
-默认冒烟模式不调用外部模型 API。真实模型模式必须显式使用 `--allow-api-calls`，并受到调用次数与费用上限保护。
-
-源码逻辑、隐私边界、运行命令和实测结果见 [本地 SWE-agent 修复与评测流水线](docs/local-agent-evaluation.md)。
+本地 SWE-agent 修复与评测的详细记录仅在本机 `docs/local-agent-evaluation.md` 留存。
 
 新实验使用统一入口和 `configs/rollout/<实验>.yaml`。省略 `--stage` 等同于
 `--stage agent`：依次检查/执行任务准备、所选框架的 rollout、模型评测、SFT 导出。
@@ -327,6 +310,16 @@ bash scripts/run-agent.sh --config configs/rollout/smoke.yaml --stage gold
 `--allow-api-calls`；任何会新启动/续跑模型调用的命令仍必须提供它。新配置不能与旧的 `--run-dir`、`--framework` 等参数混用，
 旧参数形式仍可用于新入口；旧脚本文件名不再保留。
 
+框架原生配置分别是 `configs/agent/swe-agent.yaml` 和
+`configs/agent/mini-swe-agent.yaml`，不再固定 DeepSeek 模型名或 API 地址。
+`configs/agent/README.md` 解释两份文件的分工。历史 Verified 对照配置仅在本机
+`workflows/verified50/` 留存，不属于新实验。
+模型、地址、温度和上限写在所选 rollout YAML 的实验项中。SWE-agent 的
+`completion_kwargs` 是可选的模型专属请求参数：当前 DeepSeek Flash 实验使用
+`thinking: {type: disabled}`，切换到其他模型时应检查其 API 是否支持，并删除或调整该项。
+更换原生配置文件也会改变有效配置快照；已有结果应使用新的 `rollout_id`，
+不要在旧 ID 下续跑。
+
 `--dry-run` 不写文件、不构建镜像、不调用模型。中断后在同一命令加 `--resume`；
 更换模型、温度或其他实验参数时应使用新的 `rollout_id`，不在原 ID 上续跑。
 有效配置快照保存在 `results/<run-id>/meta/rollout-configs/`，轨迹和测评分别在
@@ -336,4 +329,6 @@ bash scripts/run-agent.sh --config configs/rollout/smoke.yaml --stage gold
 SFT 输出在 `results/<run-id>/sft/<framework>/<rollout_id>/`：包含带 resolved 标记的
 `all.jsonl`、已解决的 `resolved.jsonl`、训练用 `resolved_chat.jsonl`、
 `dataset_info.json` 和核对清单。SWE-agent 使用 XML 动作格式；mini-swe-agent
-保留框架原生的 bash 动作格式。导出发现轨迹或评测缺题时会报错，不会静默丢弃。
+保留框架原生的 bash 动作格式。SWE-agent 导出直接调用内置 SWE-smith 的轨迹收集与
+XML 转换代码；mini-swe-agent 导出使用 `src/swesmith_lab/agent/mini_sft_converter.py`，
+不依赖本机历史 `workflows/`。导出发现轨迹或评测缺题时会报错，不会静默丢弃。

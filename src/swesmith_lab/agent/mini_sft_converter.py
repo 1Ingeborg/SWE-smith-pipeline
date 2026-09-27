@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert evaluated mini-SWE-agent trajectories to SWE-agent XML SFT JSONL."""
+"""Convert evaluated mini-SWE-agent trajectories to native or XML SFT JSONL."""
 
 from __future__ import annotations
 

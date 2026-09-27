@@ -9,11 +9,7 @@ environment:
     - --memory=4g
 
 model:
-  model_name: deepseek/deepseek-flash
   model_class: litellm_textbased
   cost_tracking: ignore_errors
   model_kwargs:
-    api_base: https://api.deepseek.com
-    temperature: 0
-    max_tokens: 4096
     drop_params: true
