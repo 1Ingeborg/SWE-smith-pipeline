@@ -1,5 +1,4 @@
 -c constraints.txt
 
-datasets
-litellm
-openai
+datasets==5.0.1
+openai==2.54.0

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+selected_python=$(<"$bundle_dir/python-path")
+exec "$selected_python" "$bundle_dir/bin/str_replace_editor.py" "$@"

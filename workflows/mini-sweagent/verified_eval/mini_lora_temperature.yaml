@@ -1,0 +1,23 @@
+agent:
+  step_limit: 75
+  cost_limit: 0
+  wall_time_limit_seconds: 3600
+  max_consecutive_format_errors: 3
+
+environment:
+  timeout: 120
+  run_args:
+    - --rm
+    - --memory=4g
+
+model:
+  model_name: openai/swe-mini-lora
+  model_class: lf_compatible_model.LFCompatibleTextbasedModel
+  cost_tracking: ignore_errors
+  model_kwargs:
+    api_base: http://127.0.0.1:8000/v1
+    api_key: swesmith
+    max_tokens: 4096
+    timeout: 600
+    temperature: 0.0
+    top_p: 1.0

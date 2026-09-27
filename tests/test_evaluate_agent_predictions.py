@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "evaluate-agent-predictions.py"
+SCRIPT = Path(__file__).parents[1] / "src" / "swesmith_lab" / "agent" / "evaluate.py"
 SPEC = importlib.util.spec_from_file_location("evaluate_agent_predictions", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

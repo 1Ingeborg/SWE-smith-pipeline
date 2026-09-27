@@ -1,0 +1,286 @@
+diff --git a/swesmith/bug_gen/procedural/generate.py b/swesmith/bug_gen/procedural/generate.py
+index 15817d7..72ae381 100644
+--- a/swesmith/bug_gen/procedural/generate.py
++++ b/swesmith/bug_gen/procedural/generate.py
+@@ -11,6 +11,7 @@ import json
+ import random
+ import shutil
+ import time
++import traceback
+ 
+ from pathlib import Path
+ from rich import print
+@@ -40,8 +41,31 @@ def _process_candidate(
+ 
+     Uses fast difflib-based patch generation instead of git subprocess calls.
+     """
+-    # Get modified function
+-    bug: BugRewrite | None = pm.modify(candidate)
++    # A malformed transformation should reject only this candidate, not abort
++    # the repository or the complete multi-repository production run.
++    try:
++        bug: BugRewrite | None = pm.modify(candidate)
++    except Exception as error:
++        log_dir.mkdir(parents=True, exist_ok=True)
++        error_record = {
++            "repo": repo,
++            "modifier": getattr(pm, "name", type(pm).__name__),
++            "file_path": getattr(candidate, "file_path", None),
++            "line_start": getattr(candidate, "line_start", None),
++            "line_end": getattr(candidate, "line_end", None),
++            "exception_type": type(error).__name__,
++            "exception": str(error),
++            "traceback": traceback.format_exc(),
++        }
++        with (log_dir / "candidate_errors.jsonl").open(
++            "a", encoding="utf-8"
++        ) as handle:
++            handle.write(json.dumps(error_record, ensure_ascii=False) + "\n")
++        print(
++            f"[{repo}] Skipping invalid candidate for "
++            f"{error_record['modifier']}: {type(error).__name__}: {error}"
++        )
++        return False
+     if not bug:
+         return False
+ 
+diff --git a/swesmith/bug_gen/procedural/python/operations.py b/swesmith/bug_gen/procedural/python/operations.py
+index 8fbf7b4..52db047 100644
+--- a/swesmith/bug_gen/procedural/python/operations.py
++++ b/swesmith/bug_gen/procedural/python/operations.py
+@@ -33,6 +33,16 @@ FLIPPED_OPERATORS = {
+ }
+ 
+ 
++def _replace_integer_value(original: libcst.Integer, value: int):
++    """Build a valid CST expression for an integer, including negative values."""
++    if value >= 0:
++        return original.with_changes(value=str(value))
++    return libcst.UnaryOperation(
++        operator=libcst.Minus(),
++        expression=original.with_changes(value=str(abs(value))),
++    )
++
++
+ class OperationChangeModifier(PythonProceduralModifier):
+     explanation: str = CommonPMs.OPERATION_CHANGE.explanation
+     name: str = CommonPMs.OPERATION_CHANGE.name
+@@ -163,19 +173,19 @@ class OperationChangeConstantsModifier(PythonProceduralModifier):
+                         left_value = int(updated_node.left.value)
+                     except ValueError:
+                         left_value = int(updated_node.left.value, 16)
++                    new_left_value = left_value + self.parent.rand.choice([-1, 1])
+                     updated_node = updated_node.with_changes(
+-                        left=updated_node.left.with_changes(
+-                            value=str(left_value + self.parent.rand.choice([-1, 1]))
+-                        )
++                        left=_replace_integer_value(updated_node.left, new_left_value)
+                     )
+                 if isinstance(updated_node.right, libcst.Integer):
+                     try:
+                         right_value = int(updated_node.right.value)
+                     except ValueError:
+                         right_value = int(updated_node.right.value, 16)
++                    new_right_value = right_value + self.parent.rand.choice([-1, 1])
+                     updated_node = updated_node.with_changes(
+-                        right=updated_node.right.with_changes(
+-                            value=str(right_value + self.parent.rand.choice([-1, 1]))
++                        right=_replace_integer_value(
++                            updated_node.right, new_right_value
+                         )
+                     )
+             return updated_node
+diff --git a/swesmith/profiles/base.py b/swesmith/profiles/base.py
+index b4a3213..e6ea4f7 100644
+--- a/swesmith/profiles/base.py
++++ b/swesmith/profiles/base.py
+@@ -39,6 +39,7 @@ from swesmith.constants import (
+     LOG_DIR_ENV,
+     ORG_NAME_DH,
+     ORG_NAME_GH,
++    REF_SUFFIX,
+     INSTANCE_REF,
+     CodeEntity,
+ )
+@@ -256,22 +257,51 @@ class RepoProfile(ABC, metaclass=SingletonMeta):
+         return self._cache_branches
+ 
+     def _get_cached_test_paths(self) -> list[Path]:
+-        """Clone the repo, get all testing file paths relative to the repo directory, then clean up."""
++        """Get test paths from the local image, falling back to a mirror clone."""
+         if self._cache_test_paths is None:
+             with self._lock:  # Only one process enters this block at a time
+-                # Use unique temp dir to avoid race conditions in multiprocessing
+-                import uuid
+-
+-                temp_dest = f"{self.repo_name}_{uuid.uuid4().hex[:8]}"
+-                dir_path, cloned = self.clone(dest=temp_dest)
+-                self._cache_test_paths = [
+-                    Path(os.path.relpath(os.path.join(root, file), dir_path))
+-                    for root, _, files in os.walk(Path(dir_path).resolve())
+-                    for file in files
+-                    if self._is_test_path(root, file)
+-                ]
+-                if cloned:
+-                    shutil.rmtree(dir_path)
++                # Validation already requires this image. Reading /testbed from
++                # it avoids cloning large mirrors from GitHub merely to list
++                # filenames, which can dominate validation time or hang when
++                # network throughput is poor.
++                try:
++                    output = docker.from_env().containers.run(
++                        image=self.image_name,
++                        command=["find", DOCKER_WORKDIR, "-type", "f"],
++                        user=DOCKER_USER,
++                        remove=True,
++                        platform=self.pltf,
++                    )
++                    prefix = f"{DOCKER_WORKDIR}/"
++                    paths = [
++                        Path(line.removeprefix(prefix))
++                        for line in output.decode("utf-8").splitlines()
++                        if line.startswith(prefix)
++                    ]
++                    self._cache_test_paths = [
++                        path
++                        for path in paths
++                        if self._is_test_path(str(path.parent), path.name)
++                    ]
++                except Exception as error:
++                    logger.warning(
++                        "Could not list tests from image %s; falling back to clone: %s",
++                        self.image_name,
++                        error,
++                    )
++                    # Use a unique temp dir to avoid races between workers.
++                    import uuid
++
++                    temp_dest = f"{self.repo_name}_{uuid.uuid4().hex[:8]}"
++                    dir_path, cloned = self.clone(dest=temp_dest)
++                    self._cache_test_paths = [
++                        Path(os.path.relpath(os.path.join(root, file), dir_path))
++                        for root, _, files in os.walk(Path(dir_path).resolve())
++                        for file in files
++                        if self._is_test_path(root, file)
++                    ]
++                    if cloned:
++                        shutil.rmtree(dir_path)
+ 
+         return self._cache_test_paths
+ 
+@@ -564,7 +594,20 @@ class RepoProfile(ABC, metaclass=SingletonMeta):
+     def get_test_cmd(
+         self, instance: dict, f2p_only: bool = False
+     ) -> tuple[str, list[Path]]:
+-        assert instance[KEY_INSTANCE_ID].rsplit(".", 1)[0] == self.repo_name, (
++        instance_id = instance[KEY_INSTANCE_ID]
++        # Validation appends `.ref` when it runs the unmodified pre-gold
++        # baseline for profiles that require per-instance baseline testing.
++        # Strip that internal suffix before deriving the repository name.
++        if instance_id == f"{self.repo_name}{REF_SUFFIX}":
++            source_repo = self.repo_name
++        else:
++            source_instance_id = (
++                instance_id[: -len(REF_SUFFIX)]
++                if instance_id.endswith(REF_SUFFIX)
++                else instance_id
++            )
++            source_repo = source_instance_id.rsplit(".", 1)[0]
++        assert source_repo == self.repo_name, (
+             f"WARNING: {instance[KEY_INSTANCE_ID]} not from {self.repo_name}"
+         )
+         test_command = self.test_cmd
+diff --git a/swesmith/profiles/python.py b/swesmith/profiles/python.py
+index e1d9db1..05746ec 100644
+--- a/swesmith/profiles/python.py
++++ b/swesmith/profiles/python.py
+@@ -702,6 +702,10 @@ class Pydicom7d361b3d(PythonProfile):
+     repo: str = "pydicom"
+     commit: str = "7d361b3d764dbbb1f8ad7af015e80ce96f6bf286"
+     python_version: str = "3.11"
++    # The complete suite exceeds the 15-minute reference timeout. Validate
++    # each mutation against tests related to its changed files instead.
++    min_pregold: bool = True
++    min_testing: bool = True
+ 
+ 
+ @dataclass
+@@ -905,6 +909,7 @@ class Sqlfluff50a1c4b6(PythonProfile):
+     owner: str = "sqlfluff"
+     repo: str = "sqlfluff"
+     commit: str = "50a1c4b6ff171188b6b70b39afe82a707b4919ac"
++    min_pregold: bool = True
+     min_testing: bool = True
+ 
+ 
+@@ -1153,6 +1158,7 @@ class Moto694ce1f4(PythonProfile):
+     commit: str = "694ce1f4880c784fed0553bc19b2ace6691bc109"
+     python_version = "3.12"
+     install_cmds: list = field(default_factory=lambda: ["make init"])
++    min_pregold: bool = True
+     min_testing: bool = True
+ 
+ 
+diff --git a/tests/bug_gen/procedural/python/test_py_operations.py b/tests/bug_gen/procedural/python/test_py_operations.py
+index 900ffb4..84957f8 100644
+--- a/tests/bug_gen/procedural/python/test_py_operations.py
++++ b/tests/bug_gen/procedural/python/test_py_operations.py
+@@ -125,3 +125,23 @@ def test_operation_change_constants(src, expected_variants):
+     assert any(result.strip() == variant.strip() for variant in expected_variants), (
+         f"Got: {result!r}, expected one of: {expected_variants!r}"
+     )
++
++
++def test_operation_change_constants_constructs_valid_negative_integer():
++    class AlwaysDecrement:
++        @staticmethod
++        def random():
++            return 0.0
++
++        @staticmethod
++        def choice(_choices):
++            return -1
++
++    module = libcst.parse_module("def foo(x):\n    return x + 0\n")
++    modifier = OperationChangeConstantsModifier(likelihood=1.0, seed=42)
++    modifier.rand = AlwaysDecrement()
++
++    modified = module.visit(modifier.Transformer(modifier))
++
++    assert "x + -1" in modified.code
++    libcst.parse_module(modified.code)
+diff --git a/tests/profiles/test_base.py b/tests/profiles/test_base.py
+index 0cb4f45..fcd2b4f 100644
+--- a/tests/profiles/test_base.py
++++ b/tests/profiles/test_base.py
+@@ -591,6 +591,30 @@ def test_get_test_cmd_instance_id_mismatch():
+         mock_rp.get_test_cmd(instance)
+ 
+ 
++def test_get_test_cmd_accepts_validation_reference_suffix():
++    """The validation-only .ref suffix must not change repository identity."""
++    mock_rp = MockRepoProfile("dummy_dir")
++    mock_rp.test_cmd = "pytest"
++
++    instance = {KEY_INSTANCE_ID: "test__test_repo.test1234.suffix.ref"}
++
++    test_command, test_files = mock_rp.get_test_cmd(instance)
++    assert test_command == "pytest"
++    assert test_files == []
++
++
++def test_get_test_cmd_accepts_repository_reference_instance():
++    """A shared repository-level pre-gold instance also ends in .ref."""
++    mock_rp = MockRepoProfile("dummy_dir")
++    mock_rp.test_cmd = "pytest"
++
++    instance = {KEY_INSTANCE_ID: "test__test_repo.test1234.ref"}
++
++    test_command, test_files = mock_rp.get_test_cmd(instance)
++    assert test_command == "pytest"
++    assert test_files == []
++
++
+ def test_get_test_cmd_non_pytest_eval():
+     """Test get_test_cmd in eval mode with non-pytest command."""
+     mock_rp = MockRepoProfile("dummy_dir")

@@ -9,6 +9,7 @@
 
 # Python
 .venv/
+.local/
 venv/
 __pycache__/
 *.py[cod]
@@ -17,15 +18,30 @@ __pycache__/
 .ruff_cache/
 
 # Generated SWE data
-logs/
-datasets/
-artifacts/
-results
-tasks/
-trajectories/
-models/
-checkpoints/
-cache/
+/logs/
+datasets/*
+!datasets/README.md
+runs/*
+!runs/README.md
+reports/*
+!reports/README.md
+/artifacts/
+results/*
+!results/README.md
+/tasks/
+/trajectories/
+!vendor/SWE-smith/tests/test_logs/trajectories/
+!vendor/SWE-smith/tests/test_logs/trajectories/**
+/models/
+/checkpoints/
+/cache/
+
+# Local dependencies and generated workflow state
+*.egg-info/
+workflows/**/*.bak*
+workflows/**/*.old-*
+workflows/**/preflight_approved.ok
+workflows/**/split_*/
 
 # Large archives and model files
 *.tar

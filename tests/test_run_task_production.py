@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "run-task-production.py"
+SCRIPT = Path(__file__).parents[1] / "src" / "swesmith_lab" / "issuegen" / "official.py"
 SPEC = importlib.util.spec_from_file_location("run_task_production", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

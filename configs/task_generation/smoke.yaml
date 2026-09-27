@@ -1,0 +1,44 @@
+schema_version: 1
+
+paths:
+  swesmith_repo: vendor/SWE-smith
+
+target_validated: 3  # 验证通过数的软目标，不是最终 accepted 数；单仓库不会因此提前截断
+validation_workers: 1  # Docker 验证并发数，与 DeepSeek 并发分开
+
+generation: #单个repo的生成配置
+  selected_patches: 10  # 从生成的补丁中去重并抽样，最多取 10 条交给 Docker 验证；不是最终有效 Bug 数
+  max_bugs_per_modifier: 10  # 每种改动规则最多尝试 10 处可修改代码；不保证生成 10 个 Bug
+  max_entities: 2000  # 扫描的代码实体数量上限
+  max_candidates: 500  # 所有“代码片段 × 改动规则”的组合最多尝试 500 次
+  timeout_seconds: 1800  # 单仓库生成阶段的超时秒数，不含 Docker 验证
+  seed: 42  # 程序化变异的随机种子
+  selection_seed: 42  # 从生成结果中选候选的随机种子
+  # 可选 combine_selected_patches: 15：每个仓库最多抽取多少条合成补丁做第二轮 Docker 验证。
+  # 当前配置先生成并验证单 Bug；可选 combine_file 再合并同文件内的有效单 Bug。
+  # 只写 combine_file 而不写生成策略会报错，因为它不能凭空生成单 Bug。
+  strategies:
+    procedural:
+      enabled: true  # 已验证可用；生成供 Combine 使用的单 Bug，不调用模型
+
+    combine_file:  # 同一文件内至少有 2 个已验证单 Bug，才可能产生合成候选
+      enabled: true # 仅合并同一文件内已通过验证的单 Bug
+      num_patches: 2  # 每条合成补丁使用的单 Bug 数
+      limit_per_file: 10  # 每个文件最多考虑的单 Bug 数
+      max_combos: 100  # 最多尝试的组合数
+
+issue_generation:
+  enabled: true  # 对验证通过的 Bug 生成并审核问题描述，会调用 DeepSeek API
+  backend: deepseek_reviewed  # 生成后执行规则、泄漏和事实审核
+  workers: 1  # 问题描述生成与审核的并发数
+  max_output_tokens: 800  # 每次生成或重写请求的最大输出 token 数
+  max_failing_tests: 3  # 每题最多选 3 条失败测试作描述证据，不限制 Docker 验证
+  max_rewrites: 1  # 初稿未通过审核时最多重写 1 次
+
+repositories:
+  - repo: pygments__pygments.27649ebb
+    image_name: swebench/swesmith.x86_64.pygments_1776_pygments.27649ebb
+    source_image_name: jyangballin/swesmith.x86_64.pygments_1776_pygments.27649ebb
+  - repo: pallets__jinja.ada0a9a6
+    image_name: swebench/swesmith.x86_64.pallets_1776_jinja.ada0a9a6
+    source_image_name: jyangballin/swesmith.x86_64.pallets_1776_jinja.ada0a9a6

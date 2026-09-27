@@ -1,0 +1,90 @@
+# SWE-bench Verified 的 SWE-agent 配置，由本地 vLLM 端点提供模型服务。
+#
+# 用途：评测 Qwen3.5-9B（base / +LoRA）在 SWE-bench Verified 上的解决率。
+#
+# 与 DeepSeek API Agent 配置的关键差异，逐条都有理由，勿随手改：
+#   - instances.type: swe_bench（原 swesmith）
+#   - templates / tools 保持原样 —— 必须与 SFT 训练时的 harness 完全一致，
+#     否则测到的是"换了壳的模型"，不是模型能力
+#   - per_instance_call_limit 保持 30 —— 训练轨迹就是在这个步数下生成的
+#
+# 模型名通过 CLI 覆盖，base 与 LoRA 共用这一份配置：
+#   --agent.model.name openai/swe-lora      # 微调
+#   --agent.model.name openai/qwen35-base   # 基线对照
+instances:
+  # ⚠️ subset 与 split 两个都必须显式写死。
+  #    源码默认值是 "lite" 和 "dev" —— 漏写会静默跑成 SWE-bench Lite，
+  #    或因为 Verified 没有 dev split 而报错。
+  type: swe_bench
+  subset: verified
+  split: test
+  shuffle: false
+  # evaluate 刻意不写：默认 false 时走本地评测（swebench.harness.run_evaluation），
+  # 数据不出机器。写成 true 会把预测 patch 上传到 sb-cli 云端服务。
+
+  # deployment.python_standalone_dir 保持默认 /root，不要设成 ""。
+  #
+  # 设成 "" 会跳过派生镜像构建，但容器里 swerex-remote 的 fallback 是
+  # `pip install pipx && pipx run swe-rex`，实测在容器网络下超时失败。
+  #
+  # 也注意源码里 batch_instances.py:136 的坑：设成 None 会被强制改回 "/root"，
+  # 所以 SWE-agent 日志里那句 "To skip this step, set python_standalone_dir to None"
+  # 是错的，照做无效。
+  #
+  # ⚠️ 真正必须做的是：启动 run-batch 时带 DOCKER_BUILDKIT=1。
+  # SWE-ReX 的 Dockerfile 会【从源码编译一遍 CPython】（make -j$(nproc)），
+  # 但 builder 阶段对所有实例完全相同（FROM python:3.11.9-slim-bookworm，
+  # 与 BASE_IMAGE 无关）。只有 BuildKit 的内容寻址缓存能复用它；
+  # 旧版 builder 每个镜像都从头编译，500 个镜像 × 15~20 分钟 = 125~165 小时。
+
+agent:
+  templates:
+    system_template: |-
+      You are a helpful assistant that can interact with a computer to solve tasks.
+    instance_template: |-
+      <uploaded_files>
+      {{working_dir}}
+      </uploaded_files>
+      I've uploaded a python code repository in the directory {{working_dir}}. Consider the following PR description:
+
+      <pr_description>
+      {{problem_statement}}
+      </pr_description>
+
+      Can you help me implement the necessary changes to the repository so that the requirements specified in the <pr_description> are met?
+      I've already taken care of all changes to any of the test files described in the <pr_description>. This means you DON'T have to modify the testing logic or any of the tests in any way!
+      Your task is to make the minimal changes to non-tests files in the {{working_dir}} directory to ensure the <pr_description> is satisfied.
+      Follow these steps to resolve the issue:
+      1. Find and read code relevant to the <pr_description>.
+      2. Create a small script that reproduces the error and run it.
+      3. Edit the repository source code to resolve the issue.
+      4. Rerun the reproduction and relevant tests to confirm the fix.
+      5. Check edge cases and keep the final patch minimal.
+    next_step_template: |-
+      OBSERVATION:
+      {{observation}}
+    next_step_no_output_template: |-
+      Your command ran successfully and did not produce any output.
+  tools:
+    execution_timeout: 300
+    bundles:
+      - path: tools/registry
+      - path: tools/edit_anthropic
+      - path: tools/submit
+    env_variables:
+      USE_FILEMAP: "true"
+      # 避免 `git log` 等非交互式 Agent 命令一直等待终端分页器。
+      GIT_PAGER: cat
+      PAGER: cat
+    enable_bash_tool: true
+    parse_function:
+      type: function_calling
+  model:
+    name: openai/swe-lora
+    api_base: http://localhost:8000/v1
+    # 本地 vLLM 不校验密钥，但 LiteLLM 要求密钥非空。
+    api_key: EMPTY
+    # 本地 vLLM 成本为 0，这一项不会触发；真正生效的是下面的调用次数上限。
+    per_instance_cost_limit: 2.0
+    # 与训练时一致，勿改 —— 改了就与训练分布不一致。
+    per_instance_call_limit: 30

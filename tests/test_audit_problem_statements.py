@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "audit-problem-statements.py"
+SCRIPT = Path(__file__).parents[1] / "src" / "swesmith_lab" / "issuegen" / "audit.py"
 SPEC = importlib.util.spec_from_file_location("audit_problem_statements", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

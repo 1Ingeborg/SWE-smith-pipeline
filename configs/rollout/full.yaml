@@ -1,0 +1,46 @@
+schema_version: 1
+
+run_dir: results/full  # 与 configs/task_generation/full.yaml 生成的 run-id 对应；先完成任务生成
+
+prepare:
+  template: configs/rollout/shared-tasks.yaml  # 从已接受的问题描述制作 Agent 任务镜像
+
+gold:
+  run_id: gold-deepseek-flash-t0  # 仅显式加 --with-gold 或 --stage gold 时执行
+  evaluation:
+    workers: 4  # 实验记录第十五节的 gold 评测并发
+    memory_limit: 4g  # 每个评测容器的内存上限
+    timeout_seconds: 120  # 实验记录中修正后的单题超时
+
+experiments:
+  swe-agent:
+    rollout_id: deepseek-flash-t0  # 同一批题目下标识 DeepSeek Flash、温度 0
+    native_config: configs/agent/deepseek-flash-smith.yaml  # 使用当前 smoke 已验证的编辑工具配置
+    model_name: deepseek/deepseek-flash
+    api_base: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY  # 只写变量名，不写密钥
+    temperature: 0  # 沿用当前 DeepSeek Flash smoke 的确定性温度
+    workers: 2  # 实验记录第十五节的 Agent 并发
+    per_instance_call_limit: 30  # 每题最多调用模型 30 次
+    per_instance_cost_limit: 2.0  # 每题美元费用上限
+    total_cost_limit: 10.0  # 本次 SWE-agent 运行的美元费用上限
+    evaluation:
+      workers: 4  # 实验记录第十五节的 Docker 评测并发
+      memory_limit: 4g
+      timeout_seconds: 120
+
+  mini-swe-agent:
+    rollout_id: deepseek-flash-t0  # 框架目录不同，与 SWE-agent 的结果互不覆盖
+    native_config: configs/agent/mini-swe-agent-deepseek-flash.yaml
+    model_name: deepseek/deepseek-flash
+    api_base: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    temperature: 0  # 历史 711 题运行使用的温度
+    workers: 10  # 实验记录第十七节 MINI_WORKERS=10
+    step_limit: 250  # 每题最多 250 步
+    cost_limit: 0.0  # 不设置 mini 的按题美元费用上限
+    max_output_tokens: 4096  # 沿用当前 mini 原生配置
+    evaluation:
+      workers: 6  # 实验记录第十七节 MINI_EVAL_WORKERS=6
+      memory_limit: 4g
+      timeout_seconds: 120

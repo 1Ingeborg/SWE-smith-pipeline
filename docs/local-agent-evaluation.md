@@ -84,7 +84,7 @@ Agent 只获得以下五个字段：
 
 ### 3.2 镜像设计
 
-`scripts/prepare-agent-pilot.py` 创建两层本地镜像：
+`src/swesmith_lab/agent/prepare.py` 创建两层本地镜像：
 
 - 每个仓库一个共享 runtime base。`swe-rex==1.4.0` 安装到 `/opt/swerex` 隔离环境，不改动项目 Python；SWE-agent v1.1.0 编辑工具所需的 `tree-sitter==0.21.3` 与 `tree-sitter-languages==1.10.2` 则装到项目的 testbed Python。
 - 每条任务一个 task image。在 runtime base 上应用对应 bug、隐藏测试并清洗 Git 历史。
@@ -95,7 +95,7 @@ runtime 镜像标签的指纹同时包含源镜像 ID、SWE-ReX 版本和工具�
 
 ### 3.3 Agent 运行与费用保护
 
-`scripts/run-agent-pilot.py` 固定使用独立安装的 SWE-agent v1.1.0：
+`src/swesmith_lab/agent/run.py` 固定使用独立安装的 SWE-agent v1.1.0：
 
 - 默认 `smoke` 模式使用 `instant_empty_submit`，不调用外部模型 API；
 - `model` 模式必须同时显式提供 `--allow-api-calls`、模型名、API base 和密钥环境变量；
@@ -105,7 +105,7 @@ runtime 镜像标签的指纹同时包含源镜像 ID、SWE-ReX 版本和工具�
 
 ### 3.4 私有评分
 
-`scripts/evaluate-agent-predictions.py` 支持两种输入：
+`src/swesmith_lab/agent/evaluate.py` 支持两种输入：
 
 - 普通 `preds.json`：把 Agent 的 `model_patch` 正向应用到 buggy baseline；
 - `gold`：把私有 mutation patch 反向应用，作为评测器自检，不把答案暴露给 Agent。
@@ -118,7 +118,7 @@ runtime 镜像标签的指纹同时包含源镜像 ID、SWE-ReX 版本和工具�
 
 ```bash
 cd /data/repos/swe-smith-lab
-bash scripts/bootstrap-swe-agent.sh
+bash tools/setup/bootstrap-swe-agent.sh
 ```
 
 安装脚本固定 SWE-agent v1.1.0 源码包及 SHA256，使用独立 Python 3.11 环境 `/data/venvs/sweagent`，不会污染 `/data/venvs/swesmith`。
@@ -128,8 +128,8 @@ bash scripts/bootstrap-swe-agent.sh
 先看计划：
 
 ```bash
-/data/venvs/swesmith/bin/python scripts/prepare-agent-pilot.py \
-  --config configs/experiments/agent-pilot.yaml \
+/data/venvs/swesmith-lab-core/bin/python src/swesmith_lab/agent/prepare.py \
+  --config configs/rollout/agent-pilot.yaml \
   --run-id agent-pilot-example \
   --dry-run
 ```
@@ -137,16 +137,16 @@ bash scripts/bootstrap-swe-agent.sh
 正式构建：
 
 ```bash
-/data/venvs/swesmith/bin/python scripts/prepare-agent-pilot.py \
-  --config configs/experiments/agent-pilot.yaml \
+/data/venvs/swesmith-lab-core/bin/python src/swesmith_lab/agent/prepare.py \
+  --config configs/rollout/agent-pilot.yaml \
   --run-id agent-pilot-example
 ```
 
 中断后使用相同 run ID：
 
 ```bash
-/data/venvs/swesmith/bin/python scripts/prepare-agent-pilot.py \
-  --config configs/experiments/agent-pilot.yaml \
+/data/venvs/swesmith-lab-core/bin/python src/swesmith_lab/agent/prepare.py \
+  --config configs/rollout/agent-pilot.yaml \
   --run-id agent-pilot-example \
   --resume
 ```
@@ -154,7 +154,7 @@ bash scripts/bootstrap-swe-agent.sh
 ### 4.3 零费用冒烟
 
 ```bash
-/data/venvs/swesmith/bin/python scripts/run-agent-pilot.py \
+/data/venvs/swesmith-lab-core/bin/python src/swesmith_lab/agent/run.py \
   --instances /data/results/agent-pilot-runs/agent-pilot-example/public/instances.jsonl \
   --run-id agent-smoke-example \
   --workers 1
@@ -165,7 +165,7 @@ bash scripts/bootstrap-swe-agent.sh
 ### 4.4 评测器 gold 自检
 
 ```bash
-/data/venvs/swesmith/bin/python scripts/evaluate-agent-predictions.py \
+/data/venvs/swesmith-lab-core/bin/python src/swesmith_lab/agent/evaluate.py \
   --dataset /data/results/agent-pilot-runs/agent-pilot-example/private/selected.jsonl \
   --predictions gold \
   --run-id agent-gold-example \
@@ -176,7 +176,7 @@ bash scripts/bootstrap-swe-agent.sh
 ### 4.5 评测真实 Agent 输出
 
 ```bash
-/data/venvs/swesmith/bin/python scripts/evaluate-agent-predictions.py \
+/data/venvs/swesmith-lab-core/bin/python src/swesmith_lab/agent/evaluate.py \
   --dataset /data/results/agent-pilot-runs/agent-pilot-example/private/selected.jsonl \
   --predictions /data/trajectories/agent-pilot-runs/agent-model-example/preds.json \
   --run-id agent-eval-example \

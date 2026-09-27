@@ -88,7 +88,7 @@ alternative endpoint is available and benchmark it on the same fixed gold set.
 Prepare complete evidence on the Docker host:
 
 ```bash
-python scripts/generate-problem-statements.py \
+python src/swesmith_lab/issuegen/generate.py \
   /data/results/problem-statements/prepared.jsonl \
   --dataset /data/datasets/swe-smith-lab/monkeytype-pilot-valid.jsonl \
   --validation-dir /data/repos/SWE-smith/logs/run_validation/Instagram__MonkeyType.70c3acf6 \
@@ -99,7 +99,7 @@ Generate and review on a host that can reach DashScope:
 
 ```bash
 export DASHSCOPE_API_KEY='set-outside-git'
-python scripts/generate-problem-statements.py results/reviewed.jsonl \
+python src/swesmith_lab/issuegen/generate.py results/reviewed.jsonl \
   --prepared-input results/prepared.jsonl \
   --workers 2 --overwrite
 unset DASHSCOPE_API_KEY
@@ -108,7 +108,7 @@ unset DASHSCOPE_API_KEY
 Resume an interrupted batch without repeating completed instance IDs:
 
 ```bash
-python scripts/generate-problem-statements.py results/reviewed.jsonl \
+python src/swesmith_lab/issuegen/generate.py results/reviewed.jsonl \
   --prepared-input results/prepared.jsonl \
   --workers 2 --resume
 ```
@@ -116,7 +116,7 @@ python scripts/generate-problem-statements.py results/reviewed.jsonl \
 Re-run the automated gates on a fixed candidate or gold set:
 
 ```bash
-python scripts/generate-problem-statements.py results/calibration-review.jsonl \
+python src/swesmith_lab/issuegen/generate.py results/calibration-review.jsonl \
   --prepared-input results/prepared.jsonl \
   --candidate-input results/gold.json \
   --max-rewrites 0 --overwrite

@@ -54,7 +54,7 @@ data_smith = [x for x in load_dataset(HF_DATASET, split="train")]
 
 ## 3. 已实施的轻量、可批量审核闸门
 
-新增：`scripts/audit-problem-statements.py`
+审核实现：`src/swesmith_lab/issuegen/audit.py`
 
 设计原则是“全量规则扫描，少量疑似项单次语义复核，任何未确认项目都隔离”，不再采用
 多模型、多轮改写流水线。

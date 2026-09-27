@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "run-agent-pilot.py"
+SCRIPT = Path(__file__).parents[1] / "src" / "swesmith_lab" / "agent" / "run.py"
 SPEC = importlib.util.spec_from_file_location("run_agent_pilot", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -25,7 +25,7 @@ def make_args(**overrides):
         "allow_api_calls": False,
         "model_name": None,
         "api_base": None,
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "api_key_env": "DEEPSEEK_API_KEY",
         "sweagent_executable": Path("/venv/sweagent"),
         "instances": Path("instances.jsonl"),
         "use_standalone_python": False,
@@ -66,8 +66,8 @@ def test_model_command_records_env_reference_not_secret(tmp_path):
     args = make_args(
         mode="model",
         allow_api_calls=True,
-        model_name="openai/qwen",
-        api_base="https://example.invalid/v1",
+        model_name="deepseek/deepseek-flash",
+        api_base="https://api.deepseek.com",
         instances=tmp_path / "instances.jsonl",
     )
     MODULE.validate_args(args)
@@ -77,8 +77,37 @@ def test_model_command_records_env_reference_not_secret(tmp_path):
         output_dir=Path("/output"),
     )
 
-    assert "$DASHSCOPE_API_KEY" in command
-    assert "openai/qwen" in command
+    assert "$DEEPSEEK_API_KEY" in command
+    assert "deepseek/deepseek-flash" in command
+
+
+def test_model_temperature_override_is_forwarded(tmp_path):
+    args = make_args(
+        mode="model", allow_api_calls=True, model_name="deepseek/deepseek-flash",
+        api_base="https://api.deepseek.com", temperature=0.7,
+        instances=tmp_path / "instances.jsonl",
+    )
+    MODULE.validate_args(args)
+    command = MODULE.build_command(
+        args, config_path=Path("/sweagent/config/default.yaml"), output_dir=Path("/output"),
+    )
+    assert command[command.index("--agent.model.temperature") + 1] == "0.7"
+
+
+def test_agent_refuses_upstream_batch_named_output_files(tmp_path):
+    source = tmp_path / "sweagent" / "run" / "run_batch.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        '"run_batch.log" "run_batch.config.yaml" "run_batch_exit_statuses.yaml"',
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="would create batch-named files"):
+        MODULE.verify_sweagent_output_names(tmp_path)
+    source.write_text(
+        '"agent.log" "agent.config.yaml" "agent_exit_statuses.yaml"',
+        encoding="utf-8",
+    )
+    MODULE.verify_sweagent_output_names(tmp_path)
 
 
 def test_load_public_instances_rejects_private_fields(tmp_path):

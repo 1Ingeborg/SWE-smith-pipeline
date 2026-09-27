@@ -67,7 +67,7 @@ python -m swesmith.harness.valid \
   logs/bug_gen/Instagram__MonkeyType.70c3acf6_all_patches_n10.json \
   --workers 2
 
-python /data/repos/swe-smith-lab/scripts/export-valid-local.py \
+python /data/repos/swe-smith-lab/src/swesmith_lab/pipeline/export.py \
   logs/bug_gen/Instagram__MonkeyType.70c3acf6_all_patches_n10.json \
   logs/run_validation/Instagram__MonkeyType.70c3acf6 \
   /data/datasets/swe-smith-lab/monkeytype-pilot-valid.jsonl \

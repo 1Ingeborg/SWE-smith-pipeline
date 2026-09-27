@@ -2,7 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "run-validation.py"
+SCRIPT = Path(__file__).parents[1] / "src" / "swesmith_lab" / "pipeline" / "validation.py"
 SPEC = importlib.util.spec_from_file_location("run_validation", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

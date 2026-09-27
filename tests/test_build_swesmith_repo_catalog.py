@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "build-swesmith-repo-catalog.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "src" / "swesmith_lab" / "pipeline" / "catalog.py"
 SPEC = importlib.util.spec_from_file_location("repo_catalog", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

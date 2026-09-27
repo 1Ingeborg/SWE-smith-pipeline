@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "prepare-agent-pilot.py"
+SCRIPT = Path(__file__).parents[1] / "src" / "swesmith_lab" / "agent" / "prepare.py"
 SPEC = importlib.util.spec_from_file_location("prepare_agent_pilot", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

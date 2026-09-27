@@ -1,0 +1,31 @@
+schema_version: 1
+
+run_dir: results/smoke  # 与正式实验共用已准备的 9 题和任务镜像
+
+prepare:
+  template: configs/rollout/shared-tasks.yaml
+
+gold:
+  run_id: gold-smoke
+  evaluation:
+    workers: 1
+    memory_limit: 4g
+    timeout_seconds: 120
+
+experiments:
+  swe-agent:
+    rollout_id: deepseek-flash-t0-toolcheck-mirror  # 保留首次安装超时日志
+    native_config: configs/agent/deepseek-flash-smith.yaml
+    model_name: deepseek/deepseek-flash
+    api_base: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    temperature: 0
+    workers: 1
+    max_instances: 1  # 只用第一题验证工具安装与模型调用
+    per_instance_call_limit: 30
+    per_instance_cost_limit: 2.0
+    total_cost_limit: 2.0
+    evaluation:
+      workers: 1
+      memory_limit: 4g
+      timeout_seconds: 120

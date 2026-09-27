@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "check-task-usability.py"
+SCRIPT = Path(__file__).parents[1] / "src" / "swesmith_lab" / "issuegen" / "usability.py"
 SPEC = importlib.util.spec_from_file_location("check_task_usability", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

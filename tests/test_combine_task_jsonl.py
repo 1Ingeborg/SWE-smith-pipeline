@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "combine-task-jsonl.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "src" / "swesmith_lab" / "pipeline" / "combine.py"
 SPEC = importlib.util.spec_from_file_location("combine_task_jsonl", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

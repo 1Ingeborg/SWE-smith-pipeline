@@ -1,0 +1,159 @@
+schema_version: 1
+
+paths:
+  swesmith_repo: vendor/SWE-smith
+
+# 统一生产计划：40 个仓库，每个仓库最多选取 50 个候选补丁。
+# 所有仓库在同一个运行目录中依次处理；中断后用相同 run-id 加 --resume 续跑，
+# 已完成的仓库会被跳过。
+target_validated: 1200
+validation_workers: 2
+
+generation:
+  selected_patches: 50
+  max_bugs_per_modifier: 60
+  max_entities: 3000
+  max_candidates: 2000
+  timeout_seconds: 3600
+  seed: 42
+  selection_seed: 42
+  combine_selected_patches: 15  # 每仓库最多选 15 个合成候选进入第二轮 Docker 验证
+  strategies:
+    procedural:
+      enabled: true  # 先生成并验证单 Bug，作为同文件合并的输入
+    combine_file:
+      enabled: true  # 仅合并同一文件内已通过验证的单 Bug
+      num_patches: 2  # 每个合成候选使用两个父 Bug
+      max_combos: 100
+      limit_per_file: -1
+
+issue_generation:
+  enabled: true
+  backend: deepseek_reviewed
+  workers: 2
+  max_output_tokens: 800
+  max_failing_tests: 3
+  max_rewrites: 1
+
+repositories:
+  # 初期流水线检查已使用的仓库。
+  - repo: pylint-dev__astroid.b114f6b5
+    image_name: swebench/swesmith.x86_64.pylint-dev_1776_astroid.b114f6b5
+    source_image_name: jyangballin/swesmith.x86_64.pylint-dev_1776_astroid.b114f6b5
+  - repo: pygments__pygments.27649ebb
+    image_name: swebench/swesmith.x86_64.pygments_1776_pygments.27649ebb
+    source_image_name: jyangballin/swesmith.x86_64.pygments_1776_pygments.27649ebb
+  - repo: pallets__jinja.ada0a9a6
+    image_name: swebench/swesmith.x86_64.pallets_1776_jinja.ada0a9a6
+    source_image_name: jyangballin/swesmith.x86_64.pallets_1776_jinja.ada0a9a6
+  - repo: oauthlib__oauthlib.1fd52536
+    image_name: swebench/swesmith.x86_64.oauthlib_1776_oauthlib.1fd52536
+    source_image_name: jyangballin/swesmith.x86_64.oauthlib_1776_oauthlib.1fd52536
+  - repo: scanny__python-pptx.278b47b1
+    image_name: swebench/swesmith.x86_64.scanny_1776_python-pptx.278b47b1
+    source_image_name: jyangballin/swesmith.x86_64.scanny_1776_python-pptx.278b47b1
+  - repo: Instagram__MonkeyType.70c3acf6
+    image_name: swebench/swesmith.x86_64.instagram_1776_monkeytype.70c3acf6
+    source_image_name: jyangballin/swesmith.x86_64.instagram_1776_monkeytype.70c3acf6
+  - repo: pandas-dev__pandas.95280573
+    image_name: swebench/swesmith.x86_64.pandas-dev_1776_pandas.95280573
+    source_image_name: jyangballin/swesmith.x86_64.pandas-dev_1776_pandas.95280573
+  - repo: python-openxml__python-docx.0cf6d71f
+    image_name: swebench/swesmith.x86_64.python-openxml_1776_python-docx.0cf6d71f
+    source_image_name: jyangballin/swesmith.x86_64.python-openxml_1776_python-docx.0cf6d71f
+  - repo: cantools__cantools.0c6a7871
+    image_name: swebench/swesmith.x86_64.cantools_1776_cantools.0c6a7871
+    source_image_name: jyangballin/swesmith.x86_64.cantools_1776_cantools.0c6a7871
+  - repo: pydicom__pydicom.7d361b3d
+    image_name: swebench/swesmith.x86_64.pydicom_1776_pydicom.7d361b3d
+    source_image_name: jyangballin/swesmith.x86_64.pydicom_1776_pydicom.7d361b3d
+  - repo: sqlfluff__sqlfluff.50a1c4b6
+    image_name: swebench/swesmith.x86_64.sqlfluff_1776_sqlfluff.50a1c4b6
+    source_image_name: jyangballin/swesmith.x86_64.sqlfluff_1776_sqlfluff.50a1c4b6
+  - repo: seperman__deepdiff.ed252022
+    image_name: swebench/swesmith.x86_64.seperman_1776_deepdiff.ed252022
+    source_image_name: jyangballin/swesmith.x86_64.seperman_1776_deepdiff.ed252022
+  - repo: conan-io__conan.86f29e13
+    image_name: swebench/swesmith.x86_64.conan-io_1776_conan.86f29e13
+    source_image_name: jyangballin/swesmith.x86_64.conan-io_1776_conan.86f29e13
+  - repo: paramiko__paramiko.23f92003
+    image_name: swebench/swesmith.x86_64.paramiko_1776_paramiko.23f92003
+    source_image_name: jyangballin/swesmith.x86_64.paramiko_1776_paramiko.23f92003
+  - repo: pydata__patsy.a5d16484
+    image_name: swebench/swesmith.x86_64.pydata_1776_patsy.a5d16484
+    source_image_name: jyangballin/swesmith.x86_64.pydata_1776_patsy.a5d16484
+  - repo: tobymao__sqlglot.036601ba
+    image_name: swebench/swesmith.x86_64.tobymao_1776_sqlglot.036601ba
+    source_image_name: jyangballin/swesmith.x86_64.tobymao_1776_sqlglot.036601ba
+  - repo: python-trio__trio.cfbbe2c1
+    image_name: swebench/swesmith.x86_64.python-trio_1776_trio.cfbbe2c1
+    source_image_name: jyangballin/swesmith.x86_64.python-trio_1776_trio.cfbbe2c1
+  - repo: pyasn1__pyasn1.0f07d724
+    image_name: swebench/swesmith.x86_64.pyasn1_1776_pyasn1.0f07d724
+    source_image_name: jyangballin/swesmith.x86_64.pyasn1_1776_pyasn1.0f07d724
+  - repo: pyupio__safety.7654596b
+    image_name: swebench/swesmith.x86_64.pyupio_1776_safety.7654596b
+    source_image_name: jyangballin/swesmith.x86_64.pyupio_1776_safety.7654596b
+  - repo: kayak__pypika.1c9646f0
+    image_name: swebench/swesmith.x86_64.kayak_1776_pypika.1c9646f0
+    source_image_name: jyangballin/swesmith.x86_64.kayak_1776_pypika.1c9646f0
+  - repo: sunpy__sunpy.f8edfd5c
+    image_name: swebench/swesmith.x86_64.sunpy_1776_sunpy.f8edfd5c
+    source_image_name: jyangballin/swesmith.x86_64.sunpy_1776_sunpy.f8edfd5c
+  - repo: mahmoud__boltons.3bfcfdd0
+    image_name: swebench/swesmith.x86_64.mahmoud_1776_boltons.3bfcfdd0
+    source_image_name: jyangballin/swesmith.x86_64.mahmoud_1776_boltons.3bfcfdd0
+  - repo: lepture__mistune.bf54ef67
+    image_name: swebench/swesmith.x86_64.lepture_1776_mistune.bf54ef67
+    source_image_name: jyangballin/swesmith.x86_64.lepture_1776_mistune.bf54ef67
+  - repo: encode__starlette.db5063c2
+    image_name: swebench/swesmith.x86_64.encode_1776_starlette.db5063c2
+    source_image_name: jyangballin/swesmith.x86_64.encode_1776_starlette.db5063c2
+  - repo: tkrajina__gpxpy.09fc46b3
+    image_name: swebench/swesmith.x86_64.tkrajina_1776_gpxpy.09fc46b3
+    source_image_name: jyangballin/swesmith.x86_64.tkrajina_1776_gpxpy.09fc46b3
+  - repo: pydantic__pydantic.acb0f10f
+    image_name: swebench/swesmith.x86_64.pydantic_1776_pydantic.acb0f10f
+    source_image_name: jyangballin/swesmith.x86_64.pydantic_1776_pydantic.acb0f10f
+  - repo: stanfordnlp__dspy.651a4c71
+    image_name: swebench/swesmith.x86_64.stanfordnlp_1776_dspy.651a4c71
+    source_image_name: jyangballin/swesmith.x86_64.stanfordnlp_1776_dspy.651a4c71
+  - repo: pdfminer__pdfminer.six.1a8bd2f7
+    image_name: swebench/swesmith.x86_64.pdfminer_1776_pdfminer.six.1a8bd2f7
+    source_image_name: jyangballin/swesmith.x86_64.pdfminer_1776_pdfminer.six.1a8bd2f7
+  - repo: pallets__click.fde47b4b
+    image_name: swebench/swesmith.x86_64.pallets_1776_click.fde47b4b
+    source_image_name: jyangballin/swesmith.x86_64.pallets_1776_click.fde47b4b
+  - repo: davidhalter__parso.338a5760
+    image_name: swebench/swesmith.x86_64.davidhalter_1776_parso.338a5760
+    source_image_name: jyangballin/swesmith.x86_64.davidhalter_1776_parso.338a5760
+  - repo: kurtmckee__feedparser.cad965a3
+    image_name: swebench/swesmith.x86_64.kurtmckee_1776_feedparser.cad965a3
+    source_image_name: jyangballin/swesmith.x86_64.kurtmckee_1776_feedparser.cad965a3
+  - repo: getmoto__moto.694ce1f4
+    image_name: swebench/swesmith.x86_64.getmoto_1776_moto.694ce1f4
+    source_image_name: jyangballin/swesmith.x86_64.getmoto_1776_moto.694ce1f4
+  - repo: Project-MONAI__MONAI.a09c1f08
+    image_name: swebench/swesmith.x86_64.project-monai_1776_monai.a09c1f08
+    source_image_name: jyangballin/swesmith.x86_64.project-monai_1776_monai.a09c1f08
+  - repo: mahmoud__glom.fb3c4e76
+    image_name: swebench/swesmith.x86_64.mahmoud_1776_glom.fb3c4e76
+    source_image_name: jyangballin/swesmith.x86_64.mahmoud_1776_glom.fb3c4e76
+  - repo: facebookresearch__fvcore.a491d5b9
+    image_name: swebench/swesmith.x86_64.facebookresearch_1776_fvcore.a491d5b9
+    source_image_name: jyangballin/swesmith.x86_64.facebookresearch_1776_fvcore.a491d5b9
+  - repo: mozilla__bleach.73871d76
+    image_name: swebench/swesmith.x86_64.mozilla_1776_bleach.73871d76
+    source_image_name: jyangballin/swesmith.x86_64.mozilla_1776_bleach.73871d76
+  - repo: graphql-python__graphene.82903263
+    image_name: swebench/swesmith.x86_64.graphql-python_1776_graphene.82903263
+    source_image_name: jyangballin/swesmith.x86_64.graphql-python_1776_graphene.82903263
+  - repo: iterative__dvc.1d6ea681
+    image_name: swebench/swesmith.x86_64.iterative_1776_dvc.1d6ea681
+    source_image_name: jyangballin/swesmith.x86_64.iterative_1776_dvc.1d6ea681
+  - repo: andialbrecht__sqlparse.e57923b3
+    image_name: swebench/swesmith.x86_64.andialbrecht_1776_sqlparse.e57923b3
+    source_image_name: jyangballin/swesmith.x86_64.andialbrecht_1776_sqlparse.e57923b3
+  - repo: PyCQA__flake8.cf1542ce
+    image_name: swebench/swesmith.x86_64.pycqa_1776_flake8.cf1542ce
+    source_image_name: jyangballin/swesmith.x86_64.pycqa_1776_flake8.cf1542ce

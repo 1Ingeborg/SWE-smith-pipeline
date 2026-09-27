@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "prepare-combine-candidates.py"
+SCRIPT = Path(__file__).parents[1] / "src" / "swesmith_lab" / "pipeline" / "prepare_combine.py"
 SPEC = importlib.util.spec_from_file_location("prepare_combine_candidates", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

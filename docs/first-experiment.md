@@ -13,7 +13,8 @@
   -> 人工检查有效与无效样本
 ```
 
-实验参数位于 `configs/experiments/pilot.conf`：
+以下是早期 `pilot.conf` 实验的历史参数；当前任务生成预设位于
+`configs/task_generation/`，其中 `smoke.yaml` 用于 Agent 前的完整小样：
 
 ```text
 仓库：Instagram__MonkeyType.70c3acf6
@@ -28,7 +29,7 @@ Validation workers：2
 
 ```bash
 cd /data/repos/swe-smith-lab
-bash scripts/check-host.sh
+bash tools/setup/check-host.sh
 bash scripts/check-install.sh
 
 cd /data/repos/SWE-smith
@@ -42,7 +43,7 @@ source /data/venvs/swesmith/bin/activate
 3. 用 AST 规则生成 bug patches；`--max_bugs` 是每种修改器的上限，不是全局上限。
 4. 收集 diff 与 metadata，并用 `--num_bugs 10` 选取 10 条。
 5. 使用 2 个 worker 做 validation。
-6. 使用 `scripts/export-valid-local.py` 汇总有效任务，并为淘汰样本记录原因。不要直接运行会向上游推送任务分支的 `swesmith.harness.gather`。
+6. 使用 `src/swesmith_lab/pipeline/export.py` 汇总有效任务，并为淘汰样本记录原因。不要直接运行会向上游推送任务分支的 `swesmith.harness.gather`。
 7. 人工检查至少 3 个有效样本和 3 个无效样本。
 
 Docker image 可能有数 GiB。服务器使用公网流量计费时，应在拉取前确认预算和数据盘剩余空间。
