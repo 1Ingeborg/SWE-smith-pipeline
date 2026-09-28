@@ -109,8 +109,10 @@ bash tools/setup/bootstrap-mini-swe-agent.sh
 先预览 Agent 流程，不制作镜像、不调用模型 API：
 
 ```bash
-bash scripts/run-agent.sh --config configs/rollout/smoke.yaml \
-  --experiment mini-swe-agent --dry-run
+bash scripts/run-agent.sh \
+  --config configs/rollout/smoke.yaml \
+  --experiment mini-swe-agent \
+  --dry-run
 ```
 
 已有同一 `rollout_id` 的配置快照且参数或引用文件发生变化时，dry-run 也会拒绝复用；需恢复原配置或为新实验设置新的 `rollout_id`。
@@ -119,13 +121,16 @@ bash scripts/run-agent.sh --config configs/rollout/smoke.yaml \
 # 选择 mini-SWE-agent：
 bash scripts/run-agent.sh \
   --config configs/rollout/smoke.yaml \
-  --experiment mini-swe-agent --allow-api-calls
+  --experiment mini-swe-agent \
+  --allow-api-calls
 ```
+
 ```bash
 # 选择 SWE-agent：
 bash scripts/run-agent.sh \
   --config configs/rollout/smoke.yaml \
-  --experiment swe-agent --allow-api-calls
+  --experiment swe-agent \
+  --allow-api-calls
 ```
 
 每条命令依次执行准备、rollout、评测和 SFT 导出；`--allow-api-calls` 确认允许模型调用。需要 gold 检查时加 `--with-gold`，只运行单个阶段时使用 `--stage prepare|rollout|eval|sft|gold`。
