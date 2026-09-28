@@ -137,4 +137,14 @@ bash scripts/run-agent.sh \
   --allow-api-calls
 ```
 
+SWE-agent rollout 中断时，保持相同配置和 `rollout_id` 续跑；已有完整轨迹的题目会跳过，随后自动补齐评测和 SFT：
+
+```bash
+bash scripts/run-agent.sh \
+  --config configs/rollout/smoke.yaml \
+  --experiment swe-agent \
+  --allow-api-calls \
+  --resume
+```
+
 每条命令依次执行准备、rollout、评测和 SFT 导出；`--allow-api-calls` 确认允许模型调用。需要 gold 检查时加 `--with-gold`，只运行单个阶段时使用 `--stage prepare|rollout|eval|sft|gold`。
