@@ -1,0 +1,4 @@
+# LLM 环境：可选的 LiteLLM Bug 生成策略或官方 issuegen。
+datasets==5.0.1
+litellm==1.79.3
+openai==1.109.1

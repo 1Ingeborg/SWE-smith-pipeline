@@ -1,3 +1,0 @@
-datasets==5.0.1
-litellm==1.79.3
-openai==1.109.1

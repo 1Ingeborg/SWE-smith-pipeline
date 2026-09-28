@@ -1,0 +1,3 @@
+# Core 环境：程序化 Bug 生成、Docker 验证和 DeepSeek 问题描述审核。
+datasets==5.0.1
+openai==2.54.0

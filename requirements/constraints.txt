@@ -1,2 +1,2 @@
-# SWE-smith commit 9b74ac0 imports DOCKER_USER from SWE-bench.
+# 两个环境共用的 SWE-bench 版本约束。
 swebench==4.1.0

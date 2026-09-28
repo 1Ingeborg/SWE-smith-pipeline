@@ -30,10 +30,10 @@ fi
 for profile in core llm; do
   if [[ "$profile" == core ]]; then
     venv="$CORE_VENV"
-    extras="$LAB_ROOT/requirements/cpu-extra.txt"
+    extras="$LAB_ROOT/requirements/core.txt"
   else
     venv="$LLM_VENV"
-    extras="$LAB_ROOT/requirements/llm-extra.txt"
+    extras="$LAB_ROOT/requirements/llm.txt"
   fi
   if [[ ! -e "$venv/bin/python" ]]; then
     python3 -m venv "$venv"
