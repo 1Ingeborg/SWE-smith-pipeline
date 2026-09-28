@@ -57,6 +57,10 @@ bash scripts/check-install.sh
   -> 规则检查、泄漏审核、事实审核与 accepted/quarantine 分流
 ```
 
+镜像获取：`smoke.yaml` 的 `source_image_name` 指向 `jyangballin/...` 基础镜像；本地缺少目标镜像时，程序会自动 `docker pull` 源镜像并 `docker tag` 为 `swebench/...`。
+腾讯云服务器可使用其[内网镜像加速源](https://cloud.tencent.com/document/product/1207/45596)；其他服务器若无法拉取，可在已有镜像的机器上用 `docker save` 导出、在目标机器用 `docker load` 导入。
+Agent 任务镜像由后续 `prepare` 阶段生成，不需另行下载。
+
 先只检查配置和将要执行的计划，不运行生产命令：
 
 ```bash
