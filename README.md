@@ -211,8 +211,8 @@ SWE-agent 仍使用官方多题运行命令；仓库内固定的源码已将其�
 输出文件名改为 `agent.log`、`agent.config.yaml`、`agent_exit_statuses.yaml`；
 启动前会检查补丁是否安装，避免新结果目录再次出现带 `batch` 的文件名。
 历史失败结果保留。
-`smoke-swe-toolcheck.yaml` 通过 `max_instances: 1` 只检查第一题；正式实验应使用
-独立的 `rollout_id`，不要覆盖单题或历史结果。
+如需只检查 SWE-agent 的第一题，可复制 `smoke.yaml` 并设置 `max_instances: 1`
+和独立的 `rollout_id`，不要覆盖正式实验或历史结果。
 
 ```bash
 bash scripts/run-agent.sh --config configs/rollout/smoke.yaml \

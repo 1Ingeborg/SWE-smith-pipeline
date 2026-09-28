@@ -3,7 +3,7 @@ schema_version: 1
 run_dir: results/smoke  # 本批题目的统一结果目录；必须已有问题描述和 manifest
 
 prepare:
-  template: configs/rollout/shared-tasks.yaml  # 已下载基础镜像之上制作每题 Agent 任务镜像
+  template: configs/task_prep/default.yaml  # 已下载基础镜像之上制作每题 Agent 任务镜像
 
 gold:
   run_id: gold-smoke  # 独立评测结果 ID；不调用 Agent 或模型 API

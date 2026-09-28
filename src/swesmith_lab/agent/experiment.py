@@ -339,8 +339,33 @@ def configured_args(cli: argparse.Namespace) -> tuple[argparse.Namespace, Path, 
 
 
 def check_snapshot(path: Path, content: str) -> None:
-    if path.is_file() and path.read_text(encoding="utf-8") != content:
-        raise RuntimeError(f"Saved rollout config changed; use a new rollout_id: {path}")
+    if not path.is_file():
+        return
+    saved = path.read_text(encoding="utf-8")
+    if saved == content:
+        return
+    if path.name == "prepare.yaml":
+        try:
+            previous = yaml.safe_load(saved)
+            current = yaml.safe_load(content)
+        except yaml.YAMLError:
+            pass
+        else:
+            if isinstance(previous, dict) and isinstance(current, dict):
+                previous_prepare = previous.get("prepare")
+                current_prepare = current.get("prepare")
+                if (isinstance(previous_prepare, dict)
+                        and isinstance(current_prepare, dict)
+                        and previous_prepare.get("template") == "configs/rollout/shared-tasks.yaml"
+                        and current_prepare.get("template") == "configs/task_prep/default.yaml"
+                        and isinstance(current.get("template_digest"), str)
+                        and bool(current["template_digest"])
+                        and previous.get("template_digest") == current.get("template_digest")):
+                    migrated = copy.deepcopy(previous)
+                    migrated["prepare"]["template"] = current_prepare["template"]
+                    if migrated == current:
+                        return
+    raise RuntimeError(f"Saved rollout config changed; use a new rollout_id: {path}")
 
 
 def save_snapshot(path: Path, content: str) -> None:

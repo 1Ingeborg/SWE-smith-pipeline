@@ -3,7 +3,7 @@ schema_version: 1
 run_dir: results/full  # 与 configs/task_generation/full.yaml 生成的 run-id 对应；先完成任务生成
 
 prepare:
-  template: configs/rollout/shared-tasks.yaml  # 从已接受的问题描述制作 Agent 任务镜像
+  template: configs/task_prep/default.yaml  # 从已接受的问题描述制作 Agent 任务镜像
 
 gold:
   run_id: gold-deepseek-flash  # 仅显式加 --with-gold 或 --stage gold 时执行
